@@ -1,6 +1,7 @@
 """Writes Calque.xcodeproj/project.pbxproj from the files in Calque/."""
 import hashlib, os
 
+TEAM = os.environ.get("CALQUE_TEAM", "")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def gid(s): return hashlib.md5(s.encode()).hexdigest()[:24].upper()
 
@@ -39,9 +40,10 @@ ress = "".join(f'\t\t\t\t{gid("b"+f)} /* {f} in Resources */,\n' for f, _ in res
 
 common_t = '''				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = "@TEAM@";
 				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Calque/PDFium/include";
 				INFOPLIST_FILE = Calque/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -59,6 +61,7 @@ common_t = '''				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 '''
+common_t = common_t.replace("@TEAM@", TEAM)
 common_p = '''				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
