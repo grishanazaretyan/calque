@@ -11,6 +11,7 @@ extension ViewerViewController: UITextViewDelegate {
     func buildMarkCard() {
         markCard.isHidden = true
         view.addSubview(markCard)
+        fixWidth(markCard, 560)
         toolControl.selectedSegmentIndex = 0
         toolControl.addAction(UIAction { [weak self] _ in
             guard let s = self else { return }
@@ -71,13 +72,9 @@ extension ViewerViewController: UITextViewDelegate {
         col.spacing = 12
         col.translatesAutoresizingMaskIntoConstraints = false
         markCard.contentView.addSubview(col)
-        let wide = markCard.widthAnchor.constraint(equalTo: view.safeAreaLayoutGuide.widthAnchor, constant: -24)
-        wide.priority = .defaultHigh
         NSLayoutConstraint.activate([
             markCard.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
             markCard.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            markCard.widthAnchor.constraint(lessThanOrEqualToConstant: 560),
-            wide,
             col.topAnchor.constraint(equalTo: markCard.contentView.topAnchor, constant: 14),
             col.bottomAnchor.constraint(equalTo: markCard.contentView.bottomAnchor, constant: -14),
             col.leadingAnchor.constraint(equalTo: markCard.contentView.leadingAnchor, constant: 16),

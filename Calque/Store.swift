@@ -1,5 +1,9 @@
 import Foundation
 
+extension Notification.Name {
+    static let calqueSettingsChanged = Notification.Name("CalqueSettingsChanged")
+}
+
 /// Small persistent settings and per-document data.
 enum Store {
     private static let d = UserDefaults.standard
@@ -16,6 +20,10 @@ enum Store {
     static var continuous: Bool {
         get { d.object(forKey: "continuous") as? Bool ?? true }
         set { d.set(newValue, forKey: "continuous") }
+    }
+    static var hairline: Bool {
+        get { d.bool(forKey: "hairline") }
+        set { d.set(newValue, forKey: "hairline") }
     }
     static var snap: Bool {
         get { d.object(forKey: "snap") as? Bool ?? true }

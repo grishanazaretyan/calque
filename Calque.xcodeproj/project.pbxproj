@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		23529B11D05582718769DD47 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AFA5FD125ACFF4127D75FFF /* AppDelegate.swift */; };
+		DF2E34A0E9A374E00C886275 /* HairPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE04D5BDC9830581B136A2B6 /* HairPage.swift */; };
 		CCE17E5C4479D2FB76678038 /* HomeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D7FADE0425FFC5A505E5753 /* HomeViewController.swift */; };
 		6E634450BEDDC3123213A1F3 /* Model.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE4268CF2388584C0F767A2 /* Model.swift */; };
 		CBBF93F14AFB081C2E004246 /* SettingsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0B12CE5DF9AEA08B9F9B78 /* SettingsViewController.swift */; };
@@ -17,12 +18,31 @@
 		821BD3B54548745C177C3B0F /* Viewer+Markup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E238D438AE5252AD1511580 /* Viewer+Markup.swift */; };
 		941DC9977F9966342F7A775C /* Viewer+Measure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1535D81CD834F4906BF57DDC /* Viewer+Measure.swift */; };
 		D3C278AD06674DE8BAE4B9C7 /* ViewerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41BF5C0E1D5F6608658FA2D4 /* ViewerViewController.swift */; };
-		58B5F2DF8D8FF59FFBC27CEB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CAD54048D459B1789C2F1BA2 /* Assets.xcassets */; };
+		0076A1A20EF4CD23D386D51B /* HairRender.c in Sources */ = {isa = PBXBuildFile; fileRef = 8EC47D0599DE3A686586A2B4 /* HairRender.c */; };
+		92BD27EEFD8E8B17905318D6 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 60FA72A05281DB7609019B18 /* Assets.xcassets */; };
+		8BB8A73106A10E155A6394A4 /* licenses.txt in Resources */ = {isa = PBXBuildFile; fileRef = 5CA0A1993B83250FB742CE47 /* licenses.txt */; };
+		0818E51EDE13FCBAB2F706A8 /* pdfium.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 120C6FBDD559D46217859EA3 /* pdfium.xcframework */; };
+		1C6B7DB67FB8EB1CE158606A /* pdfium.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 120C6FBDD559D46217859EA3 /* pdfium.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		2B70DEB7C3E037812C8F9FBB /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				1C6B7DB67FB8EB1CE158606A /* pdfium.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		99B1FB115CF5B0BB41207E99 /* Calque.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Calque.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8AFA5FD125ACFF4127D75FFF /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDelegate.swift"; sourceTree = "<group>"; };
+		EE04D5BDC9830581B136A2B6 /* HairPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HairPage.swift"; sourceTree = "<group>"; };
 		2D7FADE0425FFC5A505E5753 /* HomeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HomeViewController.swift"; sourceTree = "<group>"; };
 		BFE4268CF2388584C0F767A2 /* Model.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Model.swift"; sourceTree = "<group>"; };
 		4B0B12CE5DF9AEA08B9F9B78 /* SettingsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsViewController.swift"; sourceTree = "<group>"; };
@@ -32,7 +52,12 @@
 		1E238D438AE5252AD1511580 /* Viewer+Markup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Viewer+Markup.swift"; sourceTree = "<group>"; };
 		1535D81CD834F4906BF57DDC /* Viewer+Measure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Viewer+Measure.swift"; sourceTree = "<group>"; };
 		41BF5C0E1D5F6608658FA2D4 /* ViewerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ViewerViewController.swift"; sourceTree = "<group>"; };
-		CAD54048D459B1789C2F1BA2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		8EC47D0599DE3A686586A2B4 /* HairRender.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "HairRender.c"; sourceTree = "<group>"; };
+		3480950748B0C0C1C4A76087 /* Calque-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Calque-Bridging-Header.h"; sourceTree = "<group>"; };
+		F1D8AD1E8B54F3F40B9A0C32 /* HairRender.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "HairRender.h"; sourceTree = "<group>"; };
+		60FA72A05281DB7609019B18 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Assets.xcassets"; sourceTree = "<group>"; };
+		5CA0A1993B83250FB742CE47 /* licenses.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "licenses.txt"; sourceTree = "<group>"; };
+		120C6FBDD559D46217859EA3 /* pdfium.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = "PDFium/pdfium.xcframework"; sourceTree = "<group>"; };
 		70B603D2D8F977D6BCE32A07 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -41,6 +66,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0818E51EDE13FCBAB2F706A8 /* pdfium.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -59,6 +85,7 @@
 			isa = PBXGroup;
 			children = (
 				8AFA5FD125ACFF4127D75FFF /* AppDelegate.swift */,
+				EE04D5BDC9830581B136A2B6 /* HairPage.swift */,
 				2D7FADE0425FFC5A505E5753 /* HomeViewController.swift */,
 				BFE4268CF2388584C0F767A2 /* Model.swift */,
 				4B0B12CE5DF9AEA08B9F9B78 /* SettingsViewController.swift */,
@@ -68,7 +95,12 @@
 				1E238D438AE5252AD1511580 /* Viewer+Markup.swift */,
 				1535D81CD834F4906BF57DDC /* Viewer+Measure.swift */,
 				41BF5C0E1D5F6608658FA2D4 /* ViewerViewController.swift */,
-				CAD54048D459B1789C2F1BA2 /* Assets.xcassets */,
+				8EC47D0599DE3A686586A2B4 /* HairRender.c */,
+				3480950748B0C0C1C4A76087 /* Calque-Bridging-Header.h */,
+				F1D8AD1E8B54F3F40B9A0C32 /* HairRender.h */,
+				60FA72A05281DB7609019B18 /* Assets.xcassets */,
+				5CA0A1993B83250FB742CE47 /* licenses.txt */,
+				120C6FBDD559D46217859EA3 /* pdfium.xcframework */,
 				70B603D2D8F977D6BCE32A07 /* Info.plist */,
 			);
 			path = Calque;
@@ -92,6 +124,7 @@
 				6341AC9C700B96B71EF66B49 /* Sources */,
 				773DFF344F6B9CC834D1EAF2 /* Frameworks */,
 				CAE6E6D83B5C524BB034A7A7 /* Resources */,
+				2B70DEB7C3E037812C8F9FBB /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -140,7 +173,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				58B5F2DF8D8FF59FFBC27CEB /* Assets.xcassets in Resources */,
+				92BD27EEFD8E8B17905318D6 /* Assets.xcassets in Resources */,
+				8BB8A73106A10E155A6394A4 /* licenses.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -152,6 +186,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				23529B11D05582718769DD47 /* AppDelegate.swift in Sources */,
+				DF2E34A0E9A374E00C886275 /* HairPage.swift in Sources */,
 				CCE17E5C4479D2FB76678038 /* HomeViewController.swift in Sources */,
 				6E634450BEDDC3123213A1F3 /* Model.swift in Sources */,
 				CBBF93F14AFB081C2E004246 /* SettingsViewController.swift in Sources */,
@@ -161,6 +196,7 @@
 				821BD3B54548745C177C3B0F /* Viewer+Markup.swift in Sources */,
 				941DC9977F9966342F7A775C /* Viewer+Measure.swift in Sources */,
 				D3C278AD06674DE8BAE4B9C7 /* ViewerViewController.swift in Sources */,
+				0076A1A20EF4CD23D386D51B /* HairRender.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -174,8 +210,9 @@
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				SDKROOT = iphoneos;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_TESTABILITY = YES;
@@ -193,8 +230,9 @@
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				SDKROOT = iphoneos;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -209,20 +247,22 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = "";
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Calque/PDFium/include";
 				INFOPLIST_FILE = Calque/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = ge.calque.viewer;
 				PRODUCT_NAME = Calque;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = "Calque/Calque-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -234,20 +274,22 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = "";
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Calque/PDFium/include";
 				INFOPLIST_FILE = Calque/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = ge.calque.viewer;
 				PRODUCT_NAME = Calque;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = "Calque/Calque-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

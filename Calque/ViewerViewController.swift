@@ -2,7 +2,7 @@ import PDFKit
 import UIKit
 
 /// One opened PDF: continuous or one-sheet view, sheet list, measuring and markup.
-final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate, UIPopoverPresentationControllerDelegate {
+final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate, UIPopoverPresentationControllerDelegate, PDFDocumentDelegate {
 
     enum Mode { case view, measure, markup }
 
@@ -12,6 +12,8 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
     let pdfView = PDFView()
     let overlay = OverlayView()
     private var accessing = false
+    private var password: String?
+    private var hair: HairRenderer?
 
     var titles: [String?] = []
     var mode: Mode = .view
@@ -80,8 +82,12 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
     required init?(coder: NSCoder) { fatalError("not used") }
 
     deinit {
+        if HairPage.renderer === hair { HairPage.renderer = nil }
         if accessing { url.stopAccessingSecurityScopedResource() }
     }
+
+    /// Every page of the document is a HairPage, so hairlines can be switched on and off.
+    func classForPage() -> AnyClass { HairPage.self }
 
     // MARK: life cycle
 
@@ -137,6 +143,8 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
                                                name: .PDFViewPageChanged, object: pdfView)
         NotificationCenter.default.addObserver(self, selector: #selector(onScaleChanged),
                                                name: .PDFViewScaleChanged, object: pdfView)
+        NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged),
+                                               name: .calqueSettingsChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(saveState),
                                                name: UIApplication.didEnterBackgroundNotification, object: nil)
         titleLabel.text = url.deletingPathExtension().lastPathComponent
@@ -178,6 +186,7 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
             fail("This file cannot be opened. It may be damaged or not a PDF.")
             return
         }
+        d.delegate = self
         if d.isLocked {
             askPassword(d, wrong: false)
         } else {
@@ -191,7 +200,8 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
         a.addTextField { $0.isSecureTextEntry = true }
         a.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in self.close() })
         a.addAction(UIAlertAction(title: "Open", style: .default) { _ in
-            if d.unlock(withPassword: a.textFields?.first?.text ?? "") { self.show(d) }
+            let pw = a.textFields?.first?.text ?? ""
+            if d.unlock(withPassword: pw) { self.password = pw; self.show(d) }
             else { self.askPassword(d, wrong: true) }
         })
         present(a, animated: true)
@@ -206,6 +216,7 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
 
     private func show(_ d: PDFDocument) {
         doc = d
+        if Store.hairline { setHairline(true, refresh: false) }
         readTitles()
         pdfView.displayMode = Store.continuous ? .singlePageContinuous : .singlePage
         pdfView.document = d
@@ -231,6 +242,7 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
     private func installScrollObservers() {
         guard scrollObservers.isEmpty, let sv = findScroll(pdfView) else { return }
         scrollView = sv
+        sv.decelerationRate = .normal
         scrollObservers.append(sv.observe(\.contentOffset, options: []) { [weak self] _, _ in self?.viewChanged() })
         scrollObservers.append(sv.observe(\.zoomScale, options: []) { [weak self] _, _ in self?.viewChanged() })
     }
@@ -239,7 +251,9 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
 
     /// The drawing moved or zoomed: redraw marks and refresh the live measurement.
     func viewChanged() {
-        overlay.setNeedsDisplay()
+        // redrawing the full-screen layer on every scroll step makes panning stutter
+        if mode != .view || !items.isEmpty { overlay.setNeedsDisplay() }
+        if mode == .measure { keepMeasureInsets() }
         if mode == .measure {
             ensureSnap()
             updateMeasure()
@@ -259,6 +273,12 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
         }
     }
 
+    @objc private func settingsChanged() {
+        if doc != nil && Store.hairline != (HairPage.renderer != nil) { setHairline(Store.hairline, refresh: true) }
+        updateMeasure()
+        overlay.setNeedsDisplay()
+    }
+
     @objc func saveState() {
         guard doc != nil else { return }
         Measurement.save(finished, to: Store.dataFile("measure", key))
@@ -267,6 +287,7 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
 
     @objc private func close() {
         commitInline()
+        if HairPage.renderer === hair { HairPage.renderer = nil }
         if let nav = navigationController, nav.viewControllers.count > 1 { nav.popViewController(animated: true) }
         else { dismiss(animated: true) }
     }
@@ -371,13 +392,9 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
         row.spacing = 6
         row.translatesAutoresizingMaskIntoConstraints = false
         topBar.contentView.addSubview(row)
-        let wide = topBar.widthAnchor.constraint(equalTo: view.safeAreaLayoutGuide.widthAnchor, constant: -24)
-        wide.priority = .defaultHigh
         NSLayoutConstraint.activate([
             topBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
             topBar.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            topBar.widthAnchor.constraint(lessThanOrEqualToConstant: 760),
-            wide,
             topBar.heightAnchor.constraint(equalToConstant: 56),
             row.leadingAnchor.constraint(equalTo: topBar.contentView.leadingAnchor, constant: 6),
             row.trailingAnchor.constraint(equalTo: topBar.contentView.trailingAnchor, constant: -6),
@@ -385,6 +402,7 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
             back.widthAnchor.constraint(equalToConstant: 44),
             menuButton.widthAnchor.constraint(equalToConstant: 44),
         ])
+        fixWidth(topBar, 760)
     }
 
     private func viewMenuItems() -> [UIMenuElement] {
@@ -400,6 +418,11 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
             }
             out.append(UIMenu(options: .displayInline, children: [cont, single]))
         }
+        out.append(UIAction(title: "Hairlines", image: UIImage(systemName: "line.diagonal"),
+                            state: Store.hairline ? .on : .off) { [weak self] _ in
+            Store.hairline.toggle()
+            self?.setHairline(Store.hairline, refresh: true)
+        })
         out.append(UIAction(title: "Settings", image: UIImage(systemName: "slider.horizontal.3")) { [weak self] _ in
             self?.openSettings()
         })
@@ -484,6 +507,58 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
         setNeedsUpdateOfHomeIndicatorAutoHidden()
     }
 
+    /// A bar or card as wide as `width`, but never wider than the screen minus a margin.
+    func fixWidth(_ v: UIView, _ width: CGFloat) {
+        let want = v.widthAnchor.constraint(equalToConstant: width)
+        want.priority = UILayoutPriority(999)
+        NSLayoutConstraint.activate([
+            want,
+            v.widthAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.widthAnchor, constant: -24),
+        ])
+    }
+
+    // MARK: hairlines
+
+    /// Draws every line at hairline width through PDFium, like Hairline in ArchiCAD.
+    func setHairline(_ on: Bool, refresh: Bool) {
+        if on {
+            if hair == nil { hair = HairRenderer(url: url, password: password) }
+            if hair == nil {
+                Store.hairline = false
+                let a = UIAlertController(title: "Hairlines", message: "This file cannot be drawn with hairlines.", preferredStyle: .alert)
+                a.addAction(UIAlertAction(title: "OK", style: .default))
+                present(a, animated: true)
+            }
+            HairPage.renderer = hair
+        } else {
+            HairPage.renderer = nil
+        }
+        guard refresh, let d = doc else { return }
+        // PDFKit keeps the sheets it has drawn; give it the document again so it redraws them
+        let dest = pdfView.currentDestination
+        let s = pdfView.scaleFactor
+        pdfView.document = nil
+        pdfView.document = d
+        pdfView.scaleFactor = s
+        if let dest = dest { pdfView.go(to: dest) }
+        DispatchQueue.main.async {
+            self.applyZoomLimits()
+            self.overlay.setNeedsDisplay()
+        }
+    }
+
+    // MARK: measuring room
+
+    /// While measuring, any corner of a sheet can be brought to the cross in the middle.
+    func keepMeasureInsets() {
+        guard let sv = scrollView else { return }
+        let want = mode == .measure
+            ? UIEdgeInsets(top: view.bounds.height / 2, left: view.bounds.width / 2,
+                           bottom: view.bounds.height / 2, right: view.bounds.width / 2)
+            : .zero
+        if sv.contentInset != want { sv.contentInset = want }
+    }
+
     func setMode(_ m: Mode) {
         guard doc != nil else { return }
         commitInline()
@@ -497,6 +572,7 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
         markCard.isHidden = m != .markup
         if m == .markup { beginMarkup() }
         if m == .measure { ensureSnap(); updateMeasure() }
+        keepMeasureInsets()
         overlay.setNeedsDisplay()
     }
 

@@ -32,6 +32,7 @@ jobs:
           cp -R build/Release-iphoneos/Calque.app Payload/
           zip -qry Calque.ipa Payload
           ls -la Calque.ipa
+          unzip -l Calque.ipa | grep -E "Frameworks/pdfium.framework/pdfium$"
 
       - uses: actions/upload-artifact@v4
         with:

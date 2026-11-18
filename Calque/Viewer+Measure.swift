@@ -10,6 +10,7 @@ extension ViewerViewController {
     func buildMeasureCard() {
         measureCard.isHidden = true
         view.addSubview(measureCard)
+        fixWidth(measureCard, 560)
         bigLabel.adjustsFontSizeToFitWidth = true
         bigLabel.minimumScaleFactor = 0.6
         smallLabel.numberOfLines = 2
@@ -66,13 +67,9 @@ extension ViewerViewController {
         col.spacing = 12
         col.translatesAutoresizingMaskIntoConstraints = false
         measureCard.contentView.addSubview(col)
-        let wide = measureCard.widthAnchor.constraint(equalTo: view.safeAreaLayoutGuide.widthAnchor, constant: -24)
-        wide.priority = .defaultHigh
         NSLayoutConstraint.activate([
             measureCard.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
             measureCard.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            measureCard.widthAnchor.constraint(lessThanOrEqualToConstant: 560),
-            wide,
             col.topAnchor.constraint(equalTo: measureCard.contentView.topAnchor, constant: 14),
             col.bottomAnchor.constraint(equalTo: measureCard.contentView.bottomAnchor, constant: -14),
             col.leadingAnchor.constraint(equalTo: measureCard.contentView.leadingAnchor, constant: 16),
