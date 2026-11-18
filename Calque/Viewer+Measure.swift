@@ -260,12 +260,12 @@ extension ViewerViewController {
 
     private func askScale() {
         let a = UIAlertController(title: "Scale 1 : ?", message: nil, preferredStyle: .alert)
-        a.addTextField { $0.keyboardType = .decimalPad; $0.placeholder = "for 1:150 type 150" }
+        a.addTextField { $0.keyboardType = .numbersAndPunctuation; $0.placeholder = "for 1:150 type 150" }
         a.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         a.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
             self?.applyRatio(Self.number(a.textFields?.first?.text))
         })
-        present(a, animated: true)
+        presentAsking(a)
     }
 
     private func calibrate() {
@@ -281,7 +281,7 @@ extension ViewerViewController {
         }
         let seg = Self.dist(p[p.count - 2], p[p.count - 1])
         let a = UIAlertController(title: "Real length of the last segment, " + Units.inputName, message: nil, preferredStyle: .alert)
-        a.addTextField { $0.keyboardType = .decimalPad; $0.placeholder = "real length in " + Units.inputName }
+        a.addTextField { $0.keyboardType = .numbersAndPunctuation; $0.placeholder = "real length in " + Units.inputName }
         a.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         a.addAction(UIAlertAction(title: "Set scale", style: .default) { [weak self] _ in
             let mm = Units.toMm(Self.number(a.textFields?.first?.text))
@@ -291,7 +291,21 @@ extension ViewerViewController {
             s.updateMeasure()
             s.overlay.setNeedsDisplay()
         })
-        present(a, animated: true)
+        presentAsking(a)
+    }
+
+    /// Opened from a menu, an alert can appear while the menu is still closing, and then its
+    /// text field never gets the keyboard. Wait for the menu to go, then focus the field.
+    func presentAsking(_ a: UIAlertController) {
+        view.endEditing(true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self = self else { return }
+            var top: UIViewController = self
+            while let p = top.presentedViewController, !p.isBeingDismissed { top = p }
+            top.present(a, animated: true) {
+                a.textFields?.first?.becomeFirstResponder()
+            }
+        }
     }
 
     static func number(_ s: String?) -> Double {
