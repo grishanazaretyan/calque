@@ -22,3 +22,7 @@
 ## Android 1.13
 - DWG opening via LibreDWG; Android app is now GPL-3.0 open source (android/)
 - Fix: stray diagonal line when zooming into DXF drawings
+
+## Android 1.14
+- DWG/DXF layouts as pages (viewports, scales, frozen layers), layout names as sheet titles
+- New icon

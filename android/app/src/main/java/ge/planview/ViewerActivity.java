@@ -797,6 +797,11 @@ public class ViewerActivity extends Activity implements PdfCore.Listener, PdfVie
         pw = w;
         ph = h;
         titles = sheetTitles;
+        if (drawingNames != null) {               // DXF / DWG: "Model", then the layout names
+            for (int i = 0; i < titles.length && i < drawingNames.length; i++) {
+                if (titles[i] == null && drawingNames[i] != null) titles[i] = drawingNames[i];
+            }
+        }
         pageCount = w.length;
         nav.setVisibility(pageCount > 1 ? View.VISIBLE : View.GONE);
         view.setItems(Markup.load(markupFile()));
@@ -811,11 +816,17 @@ public class ViewerActivity extends Activity implements PdfCore.Listener, PdfVie
     /** For DXF drawings: the converted PDF, used for Share, Save and Print. */
     private Uri exportUri;
 
+    private String[] drawingNames;
+
     @Override
-    public void onDxf(java.io.File pdf, double ratio) {
+    public void onDxf(java.io.File pdf, double[] ratios, String[] names) {
         exportUri = Uri.fromFile(pdf);
-        // drawn to a known scale, so measuring is right without calibrating
-        if (!Store.hasRatio(this, docKey)) Store.setRatio(this, docKey, 0, ratio);
+        drawingNames = names;
+        // drawn to known scales (model, and each layout's main viewport), so measuring is
+        // right without calibrating; set the first page last, as it also sets the default
+        if (!Store.hasRatio(this, docKey)) {
+            for (int i = ratios.length - 1; i >= 0; i--) Store.setRatio(this, docKey, i, ratios[i]);
+        }
     }
 
     @Override

@@ -21,10 +21,13 @@ final class Pdfium {
 
     /** Handle (> 0), or minus a PDFium error code. The fd must stay open until close. */
     static native long open(int fd, long size, String password);
-    /** DXF → PDF; returns the drawing scale (100 for 1:100) or a negative error code. */
-    static native double dxfToPdf(String dxf, String pdf, String font, String georgianFont);
-    /** DWG → PDF through LibreDWG; same results as dxfToPdf (-7: the DWG could not be read). */
-    static native double dwgToPdf(String dwg, String tmpDxf, String pdf, String font, String georgianFont);
+    /**
+     * DXF → PDF: the model, then each layout as a page. Returns "pages\n" then one
+     * "scale\tname\n" per page (scale 100 for 1:100), or "-error\n".
+     */
+    static native String dxfToPdf(String dxf, String pdf, String font, String georgianFont);
+    /** DWG → PDF through LibreDWG; same result as dxfToPdf (-7: the DWG could not be read). */
+    static native String dwgToPdf(String dwg, String tmpDxf, String pdf, String font, String georgianFont);
     /** Text search: groups of page, left, top, right, bottom (sheet points from the top-left). */
     static native float[] search(long doc, String query, int max);
     /** A copy of the file with markup drawn in (see calque.c for the record format). */

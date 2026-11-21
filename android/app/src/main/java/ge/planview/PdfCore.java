@@ -35,8 +35,8 @@ final class PdfCore {
         void onError(String message);
         void onModeApplied();
         void onSnap(int page, SnapIndex index);
-        /** A DXF was converted: the PDF that is shown and the drawing scale it was drawn at. */
-        void onDxf(File pdf, double ratio);
+        /** A DXF or DWG was converted: the PDF shown, each page's drawing scale and name. */
+        void onDxf(File pdf, double[] ratios, String[] names);
     }
 
     /** What the view currently wants; a newer request replaces an older one. */
@@ -196,20 +196,17 @@ final class PdfCore {
         File dir = new File(app.getCacheDir(), "dxf");
         dir.mkdirs();
         String[] d = Store.describe(app, uri);
-        String id = Integer.toHexString((uri + "|" + d[1] + "|" + modified(uri)).hashCode());
+        String id = "v2-" + Integer.toHexString((uri + "|" + d[1] + "|" + modified(uri)).hashCode());
+        File cachedPdf = new File(dir, id + ".pdf"), cachedInfo = new File(dir, id + ".txt");
+        if (cachedPdf.length() > 0 && cachedInfo.length() > 0) {
+            String info = new String(java.nio.file.Files.readAllBytes(cachedInfo.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+            if (deliverPages(cachedPdf, info)) return cachedPdf;
+        }
         File[] old = dir.listFiles();
         if (old != null) {
-            for (File f : old) {
-                String name = f.getName();
-                if (name.startsWith(id + "_") && name.endsWith(".pdf") && f.length() > 0) {
-                    double r = Double.parseDouble(name.substring(id.length() + 1, name.length() - 4));
-                    post(() -> listener.onDxf(f, r));
-                    return f;
-                }
-            }
             // keep the cache small: the ten most recent conversions
             java.util.Arrays.sort(old, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
-            for (int i = 9; i < old.length; i++) old[i].delete();
+            for (int i = 20; i < old.length; i++) old[i].delete();
         }
         post(() -> listener.onRendering(true));
         File src = new File(dir, dwg ? "source.dwg" : "source.dxf");
@@ -219,15 +216,16 @@ final class PdfCore {
             while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
         }
         File tmp = new File(dir, "converting.pdf");
-        double r = dwg
+        String info = dwg
                 ? Pdfium.dwgToPdf(src.getAbsolutePath(), new File(dir, "converting.dxf").getAbsolutePath(),
                         tmp.getAbsolutePath(), font(false), font(true))
                 : Pdfium.dxfToPdf(src.getAbsolutePath(), tmp.getAbsolutePath(), font(false), font(true));
         src.delete();
         post(() -> listener.onRendering(false));
-        if (r <= 0) {
+        int pages = info == null ? -1 : Integer.parseInt(info.split("\n", 2)[0].trim());
+        if (pages <= 0) {
             tmp.delete();
-            int e = (int) -r;
+            int e = -pages;
             String why = e == 2 ? "it is a binary DXF. Save it again as an ASCII (text) DXF."
                     : e == 3 ? "it is not a DXF drawing."
                     : e == 4 ? "there is nothing visible in its model space."
@@ -238,11 +236,32 @@ final class PdfCore {
             post(() -> listener.onError("Cannot open this " + what + ": " + why));
             return null;
         }
-        File out = new File(dir, id + "_" + r + ".pdf");
-        if (!tmp.renameTo(out)) out = tmp;
-        File f = out;
-        post(() -> listener.onDxf(f, r));
+        File out = tmp.renameTo(cachedPdf) ? cachedPdf : tmp;
+        try (OutputStream o = new FileOutputStream(cachedInfo)) {
+            o.write(info.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        deliverPages(out, info);
         return out;
+    }
+
+    /** Hands the converted file's page scales and names to the viewer. */
+    private boolean deliverPages(File pdf, String info) {
+        try {
+            String[] lines = info.split("\n");
+            int n = Integer.parseInt(lines[0].trim());
+            if (n <= 0 || lines.length < n + 1) return false;
+            double[] ratios = new double[n];
+            String[] names = new String[n];
+            for (int i = 0; i < n; i++) {
+                String[] t = lines[i + 1].split("\t", 2);
+                ratios[i] = Double.parseDouble(t[0]);
+                names[i] = t.length > 1 && !t[1].isEmpty() ? t[1] : null;
+            }
+            post(() -> listener.onDxf(pdf, ratios, names));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private long modified(Uri uri) {

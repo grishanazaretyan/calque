@@ -23,6 +23,21 @@ extern "C" {
 double dxf_to_pdf(const char* dxfPath, const char* pdfPath,
                   const char* fontPath, const char* georgianFontPath);
 
+/*
+ * The same, with every layout (paper space) as a further page after the model: drawn 1:1,
+ * with its viewports showing model space at their own scale and cut to their frames.
+ * Returns the number of pages, or -DXF_ERR_x. out gets each page's scale and name.
+ */
+#define DXF_MAX_PAGES 64
+typedef struct {
+    int pages;
+    double ratio[DXF_MAX_PAGES];        /* scale denominator; for layouts, of the largest viewport */
+    char name[DXF_MAX_PAGES][64];       /* "Model", then the layout names */
+} DxfPages;
+
+int dxf_to_pdf_pages(const char* dxfPath, const char* pdfPath, const char* fontPath,
+                     const char* georgianFontPath, DxfPages* out);
+
 #ifdef __cplusplus
 }
 #endif

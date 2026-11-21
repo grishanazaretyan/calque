@@ -73,24 +73,41 @@ static void ensure_init(void) {
     }
 }
 
-// Converts a DXF file to a one-page PDF; returns the drawing scale (e.g. 100) or -error.
-JNIEXPORT jdouble JNICALL JFN(dxfToPdf)(JNIEnv* env, jclass cls, jstring dxf, jstring pdf,
+// "pages\nratio\tname\n…" for the converted pages, or "-error".
+static jstring pages_result(JNIEnv* env, int n, const DxfPages* r) {
+    size_t cap = 64 + (size_t) (n > 0 ? n : 0) * 96;
+    char* out = malloc(cap);
+    if (!out) return NULL;
+    int k = snprintf(out, cap, "%d\n", n);
+    for (int i = 0; n > 0 && i < r->pages && (size_t) k < cap; i++) {
+        k += snprintf(out + k, cap - (size_t) k, "%.6g\t%s\n", r->ratio[i], r->name[i]);
+    }
+    jstring js = (*env)->NewStringUTF(env, out);
+    free(out);
+    return js;
+}
+
+// Converts a DXF file to a PDF: the model, then every layout as a page.
+JNIEXPORT jstring JNICALL JFN(dxfToPdf)(JNIEnv* env, jclass cls, jstring dxf, jstring pdf,
                                         jstring font, jstring geoFont) {
     ensure_init();
     const char* a = (*env)->GetStringUTFChars(env, dxf, NULL);
     const char* b = (*env)->GetStringUTFChars(env, pdf, NULL);
     const char* f = font ? (*env)->GetStringUTFChars(env, font, NULL) : NULL;
     const char* g = geoFont ? (*env)->GetStringUTFChars(env, geoFont, NULL) : NULL;
-    double r = dxf_to_pdf(a, b, f, g);
+    DxfPages* r = malloc(sizeof(DxfPages));
+    int n = r ? dxf_to_pdf_pages(a, b, f, g, r) : -DXF_ERR_MEMORY;
     (*env)->ReleaseStringUTFChars(env, dxf, a);
     (*env)->ReleaseStringUTFChars(env, pdf, b);
     if (f) (*env)->ReleaseStringUTFChars(env, font, f);
     if (g) (*env)->ReleaseStringUTFChars(env, geoFont, g);
-    return r;
+    jstring out = pages_result(env, n, r);
+    free(r);
+    return out;
 }
 
 // Converts a DWG (via LibreDWG and a temporary DXF) to a one-page PDF.
-JNIEXPORT jdouble JNICALL JFN(dwgToPdf)(JNIEnv* env, jclass cls, jstring dwg, jstring tmpDxf, jstring pdf,
+JNIEXPORT jstring JNICALL JFN(dwgToPdf)(JNIEnv* env, jclass cls, jstring dwg, jstring tmpDxf, jstring pdf,
                                         jstring font, jstring geoFont) {
     ensure_init();
     const char* a = (*env)->GetStringUTFChars(env, dwg, NULL);
@@ -98,13 +115,16 @@ JNIEXPORT jdouble JNICALL JFN(dwgToPdf)(JNIEnv* env, jclass cls, jstring dwg, js
     const char* b = (*env)->GetStringUTFChars(env, pdf, NULL);
     const char* f = font ? (*env)->GetStringUTFChars(env, font, NULL) : NULL;
     const char* g = geoFont ? (*env)->GetStringUTFChars(env, geoFont, NULL) : NULL;
-    double r = dwg_to_pdf(a, t, b, f, g);
+    DxfPages* r = malloc(sizeof(DxfPages));
+    int n = r ? dwg_to_pdf_pages(a, t, b, f, g, r) : -DXF_ERR_MEMORY;
     (*env)->ReleaseStringUTFChars(env, dwg, a);
     (*env)->ReleaseStringUTFChars(env, tmpDxf, t);
     (*env)->ReleaseStringUTFChars(env, pdf, b);
     if (f) (*env)->ReleaseStringUTFChars(env, font, f);
     if (g) (*env)->ReleaseStringUTFChars(env, geoFont, g);
-    return r;
+    jstring out = pages_result(env, n, r);
+    free(r);
+    return out;
 }
 
 JNIEXPORT jlong JNICALL JFN(open)(JNIEnv* env, jclass cls, jint fd, jlong size, jstring password) {

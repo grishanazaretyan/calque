@@ -9,8 +9,9 @@
 #include "dwg.h"
 #include "dxf2pdf.h"
 
-double dwg_to_pdf(const char* dwgPath, const char* tmpDxfPath, const char* pdfPath,
-                  const char* fontPath, const char* georgianFontPath) {
+int dwg_to_pdf_pages(const char* dwgPath, const char* tmpDxfPath, const char* pdfPath,
+                     const char* fontPath, const char* georgianFontPath, DxfPages* out) {
+    memset(out, 0, sizeof *out);
     Dwg_Data dwg;
     memset(&dwg, 0, sizeof dwg);
     dwg.opts = 0;                                   // no log output
@@ -25,7 +26,7 @@ double dwg_to_pdf(const char* dwgPath, const char* tmpDxfPath, const char* pdfPa
         remove(tmpDxfPath);
         return -DWG_ERR_READ_DWG;
     }
-    double r = dxf_to_pdf(tmpDxfPath, pdfPath, fontPath, georgianFontPath);
+    int r = dxf_to_pdf_pages(tmpDxfPath, pdfPath, fontPath, georgianFontPath, out);
     remove(tmpDxfPath);
     return r;
 }

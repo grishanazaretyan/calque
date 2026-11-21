@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "fpdf_edit.h"
 #include "fpdf_save.h"
@@ -30,7 +31,23 @@ typedef struct {
     char* name;
     uint32_t rgb;
     int hidden;          // off or frozen
+    char* handle;        // for viewport freezes
 } Layer;
+
+typedef struct { char* handle; char* name; } BlockRec;
+
+typedef struct {
+    char* name;
+    int tab;             // order of the layout tabs
+    char* block;         // its block record handle → *Paper_Space…
+} Layout;
+
+typedef struct {         // a VIEWPORT on a layout: a window onto model space
+    double cx, cy, w, h; // centre and size on the sheet (paper units)
+    double vx, vy, vh;   // model point at its centre, model height it shows
+    double twist;        // radians
+    int i0, i1;          // its pairs (for frozen layers, codes 331)
+} Viewport;
 
 typedef struct {
     char* name;
@@ -81,6 +98,16 @@ typedef struct {
     Layer* layers; int nLayers;
     Block* blocks; int nBlocks;
     int entStart, entEnd;
+    BlockRec* recs; int nRecs;
+    Layout* layouts; int nLayouts;
+
+    // what is being drawn: 0 model space, 1 a layout (paper space)
+    int space;
+    int checkSpace;              // entities carry their space (code 67): the ENTITIES section
+    int clip;                    // draw only inside cx0..cx1, cy0..cy1 (page points)
+    double cx0, cy0, cx1, cy1;
+    int frozenI0, frozenI1;      // viewport pairs whose codes 331 freeze layers
+    Viewport* vps; int nvps, capvps;
 
     // pass 1: extents
     int pass;
@@ -259,6 +286,7 @@ static void emit(Ctx* c, const double* xy, int n, int closed, uint32_t rgb) {
     ColorPath* p = color_path(c, paper(rgb));
     double m = (c->pw > c->ph ? c->pw : c->ph) * 0.5;
     double minX = -m, minY = -m, maxX = c->pw + m, maxY = c->ph + m;
+    if (c->clip) { minX = c->cx0; minY = c->cy0; maxX = c->cx1; maxY = c->cy1; }
     int segs = closed ? n : n - 1;
     double lx = 0, ly = 0;
     int open = 0;                          // a subpath is running and ends at (lx, ly)
@@ -293,24 +321,51 @@ static void emit_fill(Ctx* c, const double* xy, const int* starts, int rings, in
         return;
     }
     FPDF_PAGEOBJECT path = NULL;
+    double m = (c->pw > c->ph ? c->pw : c->ph) * 0.5;
+    double lim[4] = {-m, -m, c->pw + m, c->ph + m};       // minX, minY, maxX, maxY
+    if (c->clip) { lim[0] = c->cx0; lim[1] = c->cy0; lim[2] = c->cx1; lim[3] = c->cy1; }
     for (int r = 0; r < rings; r++) {
         int a = starts[r], b = r + 1 < rings ? starts[r + 1] : total;
         if (b - a < 3) continue;
-        double m = (c->pw > c->ph ? c->pw : c->ph) * 0.5;
+        // ring in page points, then clipped edge by edge against the rectangle
+        int n = 0, cap = 2 * (b - a) + 8;
+        double* in = malloc(sizeof(double) * 2 * cap);
+        double* out = malloc(sizeof(double) * 2 * cap);
         for (int i = a; i < b; i++) {
             double fx = c->margin + (xy[2 * i] * c->unit - c->ox) * c->k;
             double fy = c->margin + (xy[2 * i + 1] * c->unit - c->oy) * c->k;
             if (!isfinite(fx) || !isfinite(fy)) continue;
-            float X = (float) (fx < -m ? -m : fx > c->pw + m ? c->pw + m : fx);
-            float Y = (float) (fy < -m ? -m : fy > c->ph + m ? c->ph + m : fy);
-            if (i == a) {
+            in[2 * n] = fx; in[2 * n + 1] = fy; n++;
+        }
+        for (int edge = 0; edge < 4 && n >= 3; edge++) {
+            int axis = edge & 1, keepAbove = edge < 2;     // 0: x >= minX, 1: y >= minY, 2: x <= maxX, 3: y <= maxY
+            double L = lim[edge];
+            int o = 0;
+            for (int i = 0; i < n; i++) {
+                double* P = in + 2 * i; double* Q = in + 2 * ((i + 1) % n);
+                int pin = keepAbove ? P[axis] >= L : P[axis] <= L;
+                int qin = keepAbove ? Q[axis] >= L : Q[axis] <= L;
+                if (pin) { out[2 * o] = P[0]; out[2 * o + 1] = P[1]; o++; }
+                if (pin != qin && o < cap - 1) {
+                    double t = (L - P[axis]) / (Q[axis] - P[axis]);
+                    out[2 * o] = P[0] + (Q[0] - P[0]) * t; out[2 * o + 1] = P[1] + (Q[1] - P[1]) * t; o++;
+                }
+                if (o >= cap - 1) break;
+            }
+            double* t = in; in = out; out = t; n = o;
+        }
+        for (int i = 0; i < n; i++) {
+            float X = (float) in[2 * i], Y = (float) in[2 * i + 1];
+            if (i == 0) {
                 if (!path) path = FPDFPageObj_CreateNewPath(X, Y);
                 else FPDFPath_MoveTo(path, X, Y);
             } else {
                 FPDFPath_LineTo(path, X, Y);
             }
         }
-        FPDFPath_Close(path);
+        if (n >= 3) FPDFPath_Close(path);
+        free(in);
+        free(out);
     }
     if (!path) return;
     uint32_t col = paper(rgb);
@@ -391,7 +446,9 @@ static uint32_t next_cp(Ctx* c, const unsigned char** s) {
     const unsigned char* p = *s;
     uint32_t ch = *p++;
     if (ch >= 0x80) {
-        if (c->utf8 && ch >= 0xC0) {
+        // UTF-8, also in older files: LibreDWG writes UTF-8 whatever the version says,
+        // and a valid multi-byte sequence is very unlikely in a code-page text
+        if (ch >= 0xC2 && ch <= 0xF4) {
             int extra = ch >= 0xF0 ? 3 : ch >= 0xE0 ? 2 : 1;
             uint32_t v = ch & (0x3F >> extra);
             int ok = 1;
@@ -400,7 +457,8 @@ static uint32_t next_cp(Ctx* c, const unsigned char** s) {
                 v = v << 6 | (p[i] & 0x3F);
             }
             if (ok) { p += extra; ch = v; }
-        } else if (c->cp1251) {
+            else if (c->cp1251 && !c->utf8) ch = CP1251[ch - 0x80];
+        } else if (c->cp1251 && !c->utf8) {
             ch = CP1251[ch - 0x80];
         }
     }
@@ -543,11 +601,12 @@ static void put_line(Ctx* c, const uint32_t* cp, int n, double x, double y,
                      double fitLen, int keepAspect, uint32_t rgb) {
     while (n > 0 && cp[n - 1] == ' ') n--;
     if (n <= 0) return;
-    double wf = hypot(ux, uy);
-    if (wf < 1e-12) { ux = 1; uy = 0; wf = 1; }
-    double bx = ux / wf, by = uy / wf;                 // unit baseline direction
     double hh = hypot(vx, vy);                         // text height, drawing units
     if (hh <= 0) return;
+    double ul = hypot(ux, uy);                         // baseline vector: width factor × height
+    if (ul < 1e-12) { ux = hh; uy = 0; ul = hh; }
+    double bx = ux / ul, by = uy / ul;                 // unit baseline direction
+    double wf = ul / hh;                               // width factor
     double ax = vx / hh, ay = vy / hh;
     if (bx * ay - by * ax < 0) { ax = -ax; ay = -ay; } // never draw text mirrored
     if (c->pass == 0) {
@@ -613,6 +672,13 @@ static void put_line(Ctx* c, const uint32_t* cp, int n, double x, double y,
     double width = w1 * sx * h;                         // page points
     double X = c->margin + (x * c->unit - c->ox) * c->k - bx * width * hfrac;
     double Y = c->margin + (y * c->unit - c->oy) * c->k - by * width * hfrac;
+    if (c->clip) {                                      // inside a viewport: whole lines only
+        double ex = X + bx * width, ey = Y + by * width;
+        if (X < c->cx0 || X > c->cx1 || Y < c->cy0 || Y > c->cy1 || ex < c->cx0 || ex > c->cx1 || ey < c->cy0 || ey > c->cy1) {
+            for (int i = 0; i < nr; i++) FPDFPageObj_Destroy(obj[i]);
+            return;
+        }
+    }
     uint32_t col = paper(rgb);
     double adv = 0;
     for (int i = 0; i < nr; i++) {
@@ -671,7 +737,7 @@ static void put_text(Ctx* c, const Mat* m, const char* raw, int mtext, double x,
         double lx = x - sr * dy, ly = y + cr * dy;
         double X, Y, X1, Y1, X2, Y2, L = 0;
         mat_ap(m, lx, ly, &X, &Y);
-        mat_ap(m, lx + cr * widthFactor, ly + sr * widthFactor, &X1, &Y1);
+        mat_ap(m, lx + cr * widthFactor * h, ly + sr * widthFactor * h, &X1, &Y1);
         mat_ap(m, lx - sr * h, ly + cr * h, &X2, &Y2);
         if (fitLen > 0) {
             double FX, FY;
@@ -761,6 +827,11 @@ static int resolve(Ctx* c, int i0, int i1, uint32_t parentRgb, int depth, uint32
     const char* ln = fstr(c, i0, i1, 8);
     Layer* L = find_layer(c, ln);
     if (L && L->hidden) return 0;
+    if (L && L->handle && c->frozenI1 > c->frozenI0) {       // frozen in this viewport
+        for (int k = c->frozenI0; k < c->frozenI1; k++) {
+            if ((c->p[k].code == 331 || c->p[k].code == 341) && strcasecmp(c->p[k].val, L->handle) == 0) return 0;
+        }
+    }
     const char* tc = fstr(c, i0, i1, 420);
     if (tc) { *out = (uint32_t) atol(tc) & 0xFFFFFF; return 1; }
     int col = fint(c, i0, i1, 62, 256);
@@ -863,11 +934,41 @@ static void draw_hatch(Ctx* c, int i, int e, const Mat* m, uint32_t rgb) {
     free(starts);
 }
 
+// A layout viewport: its frame counts towards the sheet size; its view is drawn later.
+static void add_viewport(Ctx* c, int i, int e) {
+    if (fint(c, i, e, 69, 0) == 1) return;                 // the sheet itself, not a window
+    if (fint(c, i, e, 68, 1) == 0) return;                 // switched off
+    double w = fnum(c, i, e, 40, 0), h = fnum(c, i, e, 41, 0), vh = fnum(c, i, e, 45, 0);
+    if (w <= 0 || h <= 0 || vh <= 0) return;
+    double dx = fnum(c, i, e, 16, 0), dy = fnum(c, i, e, 26, 0), dz = fnum(c, i, e, 36, 1);
+    if (fabs(dx) > 1e-6 || fabs(dy) > 1e-6 || dz <= 0) return;   // 3D views are not drawn
+    double cx = fnum(c, i, e, 10, 0), cy = fnum(c, i, e, 20, 0);
+    if (c->pass == 0) {
+        sample(c, (cx - w / 2) * c->unit, (cy - h / 2) * c->unit);
+        sample(c, (cx + w / 2) * c->unit, (cy + h / 2) * c->unit);
+        return;
+    }
+    if (c->nvps == c->capvps) {
+        c->capvps = c->capvps ? c->capvps * 2 : 8;
+        c->vps = realloc(c->vps, sizeof(Viewport) * c->capvps);
+    }
+    Viewport* v = &c->vps[c->nvps++];
+    v->cx = cx; v->cy = cy; v->w = w; v->h = h; v->vh = vh;
+    v->vx = fnum(c, i, e, 17, 0) + fnum(c, i, e, 12, 0);
+    v->vy = fnum(c, i, e, 27, 0) + fnum(c, i, e, 22, 0);
+    v->twist = fnum(c, i, e, 51, 0) * M_PI / 180;
+    v->i0 = i; v->i1 = e;
+}
+
 // Draws the entity that starts at pair i; returns the index of the next entity.
 static int draw_entity(Ctx* c, int i, const Mat* m, uint32_t parentRgb, int depth) {
     int e = ent_end(c, i);
     const char* type = c->p[i].val;
-    if (depth == 0 && fint(c, i, e, 67, 0) == 1) {           // paper space
+    if (depth == 0 && is(type, "VIEWPORT")) {
+        if (c->space == 1) add_viewport(c, i, e);
+        return e;
+    }
+    if (depth == 0 && c->checkSpace && (fint(c, i, e, 67, 0) == 1) != (c->space == 1)) {   // the other space
         if (is(type, "POLYLINE")) {
             int j = e;
             while (j < c->n && c->p[j].code == 0 && is(c->p[j].val, "VERTEX")) j = ent_end(c, j);
@@ -1108,13 +1209,13 @@ static double units_to_mm(int u) {
 
 static void read_structure(Ctx* c) {
     int section = 0;                   // 1 header, 2 tables, 3 blocks, 4 entities
-    int capL = 0, capB = 0;
+    int capL = 0, capB = 0, capR = 0, capO = 0;
     c->entStart = c->entEnd = -1;
     for (int i = 0; i < c->n; i++) {
         Pair* p = &c->p[i];
         if (p->code == 0 && is(p->val, "SECTION") && i + 1 < c->n && c->p[i + 1].code == 2) {
             const char* name = c->p[i + 1].val;
-            section = is(name, "HEADER") ? 1 : is(name, "TABLES") ? 2 : is(name, "BLOCKS") ? 3 : is(name, "ENTITIES") ? 4 : 5;
+            section = is(name, "HEADER") ? 1 : is(name, "TABLES") ? 2 : is(name, "BLOCKS") ? 3 : is(name, "ENTITIES") ? 4 : is(name, "OBJECTS") ? 5 : 6;
             if (section == 4) c->entStart = i + 2;
             continue;
         }
@@ -1135,10 +1236,38 @@ static void read_structure(Ctx* c) {
             if (c->nLayers == capL) { capL = capL ? capL * 2 : 64; c->layers = realloc(c->layers, sizeof(Layer) * capL); }
             Layer* L = &c->layers[c->nLayers++];
             L->name = (char*) name;
+            L->handle = (char*) fstr(c, i, e, 5);
             int col = fint(c, i, e, 62, 7);
             const char* tc = fstr(c, i, e, 420);
             L->rgb = tc ? (uint32_t) atol(tc) & 0xFFFFFF : aci(col);
             L->hidden = col < 0 || (fint(c, i, e, 70, 0) & 1);   // off, or frozen
+        } else if (section == 2 && p->code == 0 && is(p->val, "BLOCK_RECORD")) {
+            int e = ent_end(c, i);
+            const char* h = fstr(c, i, e, 5);
+            const char* name = fstr(c, i, e, 2);
+            if (h && name) {
+                if (c->nRecs == capR) { capR = capR ? capR * 2 : 64; c->recs = realloc(c->recs, sizeof(BlockRec) * capR); }
+                c->recs[c->nRecs].handle = (char*) h;
+                c->recs[c->nRecs].name = (char*) name;
+                c->nRecs++;
+            }
+        } else if (section == 5 && p->code == 0 && is(p->val, "LAYOUT")) {
+            int e = ent_end(c, i);
+            const char* name = NULL;
+            const char* rec = NULL;
+            int inLayout = 0;
+            for (int k = i; k < e; k++) {                  // name and 330 after "100 AcDbLayout"
+                if (c->p[k].code == 100) inLayout = is(c->p[k].val, "AcDbLayout");
+                else if (inLayout && c->p[k].code == 330) rec = c->p[k].val;
+                else if (inLayout && c->p[k].code == 1 && !name) name = c->p[k].val;
+            }
+            if (name && rec) {
+                if (c->nLayouts == capO) { capO = capO ? capO * 2 : 8; c->layouts = realloc(c->layouts, sizeof(Layout) * capO); }
+                c->layouts[c->nLayouts].name = (char*) name;
+                c->layouts[c->nLayouts].tab = fint(c, i, e, 71, 0);
+                c->layouts[c->nLayouts].block = (char*) rec;
+                c->nLayouts++;
+            }
         } else if (section == 3 && p->code == 0 && is(p->val, "BLOCK")) {
             int e = ent_end(c, i);
             const char* name = fstr(c, i, e, 2);
@@ -1201,7 +1330,94 @@ static int write_block(FPDF_FILEWRITE* w, const void* data, unsigned long size) 
     return fwrite(data, 1, size, wr->f) == size;
 }
 
-double dxf_to_pdf(const char* dxfPath, const char* pdfPath, const char* fontPath, const char* georgianFontPath) {
+static void reset_extents(Ctx* c) {
+    c->ns = 0;
+    c->stride = 1;
+    c->counter = 0;
+    c->minx = c->miny = 1e300;
+    c->maxx = c->maxy = -1e300;
+}
+
+// Writes out the current page and starts a new one of the given size.
+static int new_page(Ctx* c, int index, double pw, double ph) {
+    if (c->page) {
+        for (int i = 0; i < c->ncp; i++) flush_path(c, &c->cp[i]);
+        FPDFPage_GenerateContent(c->page);
+        FPDF_ClosePage(c->page);
+        c->page = NULL;
+    }
+    c->ncp = 0;
+    if (pw < 72) pw = 72;
+    if (ph < 72) ph = 72;
+    c->pw = pw;
+    c->ph = ph;
+    c->page = FPDFPage_New(c->doc, index, pw, ph);
+    return c->page != NULL;
+}
+
+static int cmp_layout(const void* a, const void* b) { return ((const Layout*) a)->tab - ((const Layout*) b)->tab; }
+
+static const char* rec_name(Ctx* c, const char* handle) {
+    for (int i = 0; i < c->nRecs; i++) if (strcasecmp(c->recs[i].handle, handle) == 0) return c->recs[i].name;
+    return NULL;
+}
+
+// One layout as a page at 1:1: its own paper-space drawing, and each viewport showing model
+// space at the viewport's scale, cut to the viewport frame. Returns 1 if a page was added.
+static int draw_layout(Ctx* c, const Layout* L, int index, DxfPages* out) {
+    const char* bname = rec_name(c, L->block);
+    if (!bname || strncasecmp(bname, "*Model_Space", 12) == 0) return 0;
+    int from, to, check;
+    if (strcasecmp(bname, "*Paper_Space") == 0) { from = c->entStart; to = c->entEnd; check = 1; }
+    else {
+        Block* b = find_block(c, bname);
+        if (!b) return 0;
+        from = b->start; to = b->end; check = 0;
+    }
+    // pass 1: the sheet's extent (its drawing and viewport frames)
+    c->space = 1; c->checkSpace = check; c->pass = 0;
+    reset_extents(c);
+    draw_range(c, from, to, &IDENT, 0xFFFFFF, 0);
+    if (c->maxx < c->minx) return 0;
+    double w = c->maxx - c->minx, h = c->maxy - c->miny;
+    c->k = 72.0 / 25.4;                                   // layouts are drawn 1:1
+    c->margin = 5 * 72.0 / 25.4;
+    c->ox = c->minx;
+    c->oy = c->miny;
+    if (!new_page(c, index, w * c->k + 2 * c->margin, h * c->k + 2 * c->margin)) return 0;
+    // pass 2: paper-space drawing, then the viewports
+    c->pass = 1;
+    c->nvps = 0;
+    draw_range(c, from, to, &IDENT, 0xFFFFFF, 0);
+    double bestArea = 0, ratio = 1;
+    int nv = c->nvps;
+    for (int i = 0; i < nv; i++) {
+        Viewport v = c->vps[i];
+        double s = v.h / v.vh;                            // paper units per model unit
+        Mat m = mat_mul(mat_tr(v.cx, v.cy), mat_mul(mat_rot(v.twist), mat_mul(mat_sc(s, s), mat_tr(-v.vx, -v.vy))));
+        c->clip = 1;
+        c->cx0 = c->margin + ((v.cx - v.w / 2) * c->unit - c->ox) * c->k;
+        c->cx1 = c->margin + ((v.cx + v.w / 2) * c->unit - c->ox) * c->k;
+        c->cy0 = c->margin + ((v.cy - v.h / 2) * c->unit - c->oy) * c->k;
+        c->cy1 = c->margin + ((v.cy + v.h / 2) * c->unit - c->oy) * c->k;
+        c->frozenI0 = v.i0; c->frozenI1 = v.i1;
+        c->space = 0; c->checkSpace = 1;
+        draw_range(c, c->entStart, c->entEnd, &m, 0xFFFFFF, 0);
+        c->space = 1; c->checkSpace = check;
+        c->clip = 0;
+        c->frozenI0 = c->frozenI1 = 0;
+        for (int k = 0; k < c->ncp; k++) flush_path(c, &c->cp[k]);   // keep the clip per viewport
+        if (v.w * v.h > bestArea) { bestArea = v.w * v.h; ratio = 1 / s; }
+    }
+    out->ratio[out->pages] = ratio;
+    snprintf(out->name[out->pages], sizeof out->name[0], "%s", L->name);
+    out->pages++;
+    return 1;
+}
+
+int dxf_to_pdf_pages(const char* dxfPath, const char* pdfPath, const char* fontPath, const char* georgianFontPath,
+                     DxfPages* out) {
+    memset(out, 0, sizeof *out);
     size_t len = 0;
     unsigned char* raw = read_all(dxfPath, &len);
     if (!raw) return -DXF_ERR_READ;
@@ -1216,55 +1432,62 @@ double dxf_to_pdf(const char* dxfPath, const char* pdfPath, const char* fontPath
     c->unit = 1;
     c->fontPath = fontPath;
     c->geoPath = georgianFontPath;
-    double result = -DXF_ERR_NOTDXF;
+    int result = -DXF_ERR_NOTDXF;
 
     if (!tokenize(c, buf, len + 1)) goto done;
     read_structure(c);
     if (c->entStart < 0) goto done;
-
-    // pass 1: extents
     c->sx = malloc(sizeof(float) * MAX_SAMPLES);
     c->sy = malloc(sizeof(float) * MAX_SAMPLES);
     if (!c->sx || !c->sy) { result = -DXF_ERR_MEMORY; goto done; }
-    c->stride = 1;
-    c->minx = c->miny = 1e300;
-    c->maxx = c->maxy = -1e300;
-    c->pass = 0;
-    draw_range(c, c->entStart, c->entEnd, &IDENT, 0xFFFFFF, 0);
-    if (c->maxx < c->minx) { result = -DXF_ERR_EMPTY; goto done; }
-
-    double x0, y0, x1, y1;
-    robust_extents(c, &x0, &y0, &x1, &y1);
-    double w = x1 - x0, h = y1 - y0, span = w > h ? w : h;
-    if (span <= 0) span = w = h = 1;
-
-    // the smallest standard scale that fits the drawing on an A0 sheet
-    static const double SCALES[] = {1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000,
-                                    10000, 20000, 25000, 50000, 100000, 200000, 500000, 1000000};
-    double ratio = SCALES[sizeof SCALES / sizeof SCALES[0] - 1];
-    for (size_t i = 0; i < sizeof SCALES / sizeof SCALES[0]; i++) {
-        if (span / SCALES[i] <= 1169) { ratio = SCALES[i]; break; }
-    }
-    c->k = 72.0 / 25.4 / ratio;
-    c->margin = 10 * 72.0 / 25.4;
-    c->ox = x0;
-    c->oy = y0;
-    double pw = w * c->k + 2 * c->margin, ph = h * c->k + 2 * c->margin;
-    if (pw < 72) pw = 72;
-    if (ph < 72) ph = 72;
-    c->pw = pw;
-    c->ph = ph;
-
-    // pass 2: the PDF
     c->doc = FPDF_CreateNewDocument();
     if (!c->doc) { result = -DXF_ERR_MEMORY; goto done; }
-    c->page = FPDFPage_New(c->doc, 0, pw, ph);
-    if (!c->page) { result = -DXF_ERR_MEMORY; goto done; }
-    c->pass = 1;
+
+    // ---- the model, scaled to fit an A0 sheet
+    c->space = 0; c->checkSpace = 1; c->pass = 0;
+    reset_extents(c);
     draw_range(c, c->entStart, c->entEnd, &IDENT, 0xFFFFFF, 0);
-    for (int i = 0; i < c->ncp; i++) flush_path(c, &c->cp[i]);
-    if (!c->drawn) { result = -DXF_ERR_EMPTY; goto done; }
-    if (!FPDFPage_GenerateContent(c->page)) { result = -DXF_ERR_WRITE; goto done; }
+    if (c->maxx >= c->minx) {
+        double x0, y0, x1, y1;
+        robust_extents(c, &x0, &y0, &x1, &y1);
+        double w = x1 - x0, h = y1 - y0, span = w > h ? w : h;
+        if (span <= 0) span = w = h = 1;
+        static const double SCALES[] = {1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000,
+                                        10000, 20000, 25000, 50000, 100000, 200000, 500000, 1000000};
+        double ratio = SCALES[sizeof SCALES / sizeof SCALES[0] - 1];
+        for (size_t i = 0; i < sizeof SCALES / sizeof SCALES[0]; i++) {
+            if (span / SCALES[i] <= 1169) { ratio = SCALES[i]; break; }
+        }
+        c->k = 72.0 / 25.4 / ratio;
+        c->margin = 10 * 72.0 / 25.4;
+        c->ox = x0;
+        c->oy = y0;
+        if (!new_page(c, 0, w * c->k + 2 * c->margin, h * c->k + 2 * c->margin)) { result = -DXF_ERR_MEMORY; goto done; }
+        c->pass = 1;
+        long before = c->drawn;
+        draw_range(c, c->entStart, c->entEnd, &IDENT, 0xFFFFFF, 0);
+        if (c->drawn > before) {
+            out->ratio[0] = ratio;
+            snprintf(out->name[0], sizeof out->name[0], "Model");
+            out->pages = 1;
+        } else {
+            for (int i = 0; i < c->ncp; i++) flush_path(c, &c->cp[i]);
+            FPDF_ClosePage(c->page);
+            c->page = NULL;
+            FPDFPage_Delete(c->doc, 0);
+        }
+    }
+
+    // ---- the layouts, in tab order
+    if (c->nLayouts) qsort(c->layouts, c->nLayouts, sizeof(Layout), cmp_layout);
+    for (int i = 0; i < c->nLayouts && out->pages < DXF_MAX_PAGES; i++) {
+        draw_layout(c, &c->layouts[i], out->pages, out);
+    }
+    if (c->page) {
+        for (int i = 0; i < c->ncp; i++) flush_path(c, &c->cp[i]);
+        FPDFPage_GenerateContent(c->page);
+    }
+    if (!out->pages) { result = -DXF_ERR_EMPTY; goto done; }
 
     {
         Writer wr;
@@ -1277,7 +1500,7 @@ double dxf_to_pdf(const char* dxfPath, const char* pdfPath, const char* fontPath
         if (fclose(wr.f) != 0) ok = 0;
         if (!ok) { remove(pdfPath); result = -DXF_ERR_WRITE; goto done; }
     }
-    result = ratio;
+    result = out->pages;
 
 done:
     if (c->page) FPDF_ClosePage(c->page);
@@ -1291,8 +1514,18 @@ done:
     free(c->sy);
     free(c->layers);
     free(c->blocks);
+    free(c->recs);
+    free(c->layouts);
+    free(c->vps);
     free(c->p);
     free(c);
     free(buf);
+    if (result <= 0) out->pages = 0;
     return result;
+}
+
+double dxf_to_pdf(const char* dxfPath, const char* pdfPath, const char* fontPath, const char* georgianFontPath) {
+    DxfPages r;
+    int n = dxf_to_pdf_pages(dxfPath, pdfPath, fontPath, georgianFontPath, &r);
+    return n > 0 ? r.ratio[0] : n;
 }
