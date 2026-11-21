@@ -1,0 +1,1 @@
+LibreDWG commit 27e828d212852b8cd08c1cd5d2721e5b738ca8a9 (Sat Nov 21 15:32:57 2026 +0100)
