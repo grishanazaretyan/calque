@@ -42,7 +42,7 @@ common_t = '''				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = "@TEAM@";
 				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Calque/PDFium/include";
 				INFOPLIST_FILE = Calque/Info.plist;
@@ -51,7 +51,7 @@ common_t = '''				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = ge.calque.viewer;
 				PRODUCT_NAME = Calque;
 				SDKROOT = iphoneos;
