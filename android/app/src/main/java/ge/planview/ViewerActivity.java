@@ -816,6 +816,12 @@ public class ViewerActivity extends Activity implements PdfCore.Listener, PdfVie
     /** For DXF drawings: the converted PDF, used for Share, Save and Print. */
     private Uri exportUri;
 
+    @Override
+    public void onStatus(String text) {
+        if (text != null) subtitle.setText(text);
+        else if (pageCount == 0) subtitle.setText("Opening…");
+    }
+
     private String[] drawingNames;
 
     @Override

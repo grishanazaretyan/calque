@@ -25,7 +25,7 @@
 
 // ---------------------------------------------------------------- tokens
 
-typedef struct { int code; char* val; } Pair;
+typedef struct { int32_t code; uint32_t off; } Pair;   // value = buf + off (8 bytes per pair)
 
 typedef struct {
     char* name;
@@ -92,6 +92,7 @@ typedef struct {
 typedef struct {
     Pair* p;
     int n;
+    char* buf;                   // the whole file, values are NUL-terminated inside it
     int utf8, cp1251;
     double unit;                 // drawing units → mm
 
@@ -102,6 +103,12 @@ typedef struct {
     Layout* layouts; int nLayouts;
 
     // what is being drawn: 0 model space, 1 a layout (paper space)
+    int fillAt;                  // next index for a fill: fills stay below lines and text
+    // per top-level model entity, its extent in mm (to skip what a viewport cannot see)
+    int recordBoxes, cull, ordinal;
+    float* ebox; int nebox, capebox;
+    double tx0, ty0, tx1, ty1;   // extent of the entity being measured
+    double wx0, wy0, wx1, wy1;   // the model area a viewport shows, mm
     int space;
     int checkSpace;              // entities carry their space (code 67): the ENTITIES section
     int clip;                    // draw only inside cx0..cx1, cy0..cy1 (page points)
@@ -142,7 +149,7 @@ static int is(const char* a, const char* b) { return a && strcmp(a, b) == 0; }
 
 // Value of the first `code` in pairs [i0, i1), or def.
 static const char* fstr(Ctx* c, int i0, int i1, int code) {
-    for (int i = i0; i < i1; i++) if (c->p[i].code == code) return c->p[i].val;
+    for (int i = i0; i < i1; i++) if (c->p[i].code == code) return (c->buf + c->p[i].off);
     return NULL;
 }
 static double fnum(Ctx* c, int i0, int i1, int code, double def) {
@@ -172,13 +179,30 @@ static uint32_t rgb3(double r, double g, double b) {
     return (uint32_t) (R << 16 | G << 8 | B);
 }
 
-// Colours meant for a black CAD screen, darkened where they would vanish on white paper.
+#define TRUECOLOR 0x1000000u            // flag: an exact RGB colour, not an index colour
+
+// Line and text colours: index colours are meant for a black CAD screen, so white draws
+// black and light ones are darkened to stay visible on white paper. Exact (true) colours
+// keep their hue; only near-white ones turn black.
 static uint32_t paper(uint32_t c) {
     double r = (c >> 16 & 255) / 255.0, g = (c >> 8 & 255) / 255.0, b = (c & 255) / 255.0;
     double l = 0.299 * r + 0.587 * g + 0.114 * b;
     if (l > 0.93) return 0x000000;          // white lines draw black
+    if (c & TRUECOLOR) return c & 0xFFFFFF;
     if (l > 0.5) { double f = 0.45 / l; return rgb3(r * f, g * f, b * f); }
-    return c;
+    return c & 0xFFFFFF;
+}
+
+// Fill colours: exact colours as they are (light backgrounds stay light, white masks stay
+// white); index colours like lines, except greys, which are meant as tones.
+static uint32_t paper_fill(uint32_t c) {
+    // exact black fills disappear into AutoCAD's black screen (they are used as masks),
+    // so on white paper they become white, the colour of the background
+    if ((c & TRUECOLOR) && (c >> 16 & 255) < 10 && (c >> 8 & 255) < 10 && (c & 255) < 10) return 0xFFFFFF;
+    if (c & TRUECOLOR) return c & 0xFFFFFF;
+    int r = c >> 16 & 255, g = c >> 8 & 255, b = c & 255;
+    if (r == g && g == b && r < 250) return c & 0xFFFFFF;
+    return paper(c);
 }
 
 static uint32_t aci(int i) {
@@ -196,7 +220,7 @@ static uint32_t aci(int i) {
     if (i < 10 || i > 249) return 0xFFFFFF;
     double h = (i - 10) / 10 * 15.0;              // hue, degrees
     int k = i % 10;
-    static const double val[] = {1.0, 1.0, 0.8, 0.8, 0.6, 0.6, 0.5, 0.5, 0.3, 0.3};
+    static const double val[] = {1.0, 1.0, 0.65, 0.65, 0.5, 0.5, 0.3, 0.3, 0.15, 0.15};
     double v = val[k], s = (k % 2) ? 0.5 : 1.0;
     double hh = h / 60.0, x = 1 - fabs(fmod(hh, 2) - 1);
     double r = 0, g = 0, b = 0;
@@ -226,6 +250,10 @@ static Block* find_block(Ctx* c, const char* name) {
 
 static void sample(Ctx* c, double x, double y) {
     if (!(fabs(x) < 1e12 && fabs(y) < 1e12)) return;
+    if (x < c->tx0) c->tx0 = x;
+    if (x > c->tx1) c->tx1 = x;
+    if (y < c->ty0) c->ty0 = y;
+    if (y > c->ty1) c->ty1 = y;
     if (x < c->minx) c->minx = x;
     if (x > c->maxx) c->maxx = x;
     if (y < c->miny) c->miny = y;
@@ -368,10 +396,12 @@ static void emit_fill(Ctx* c, const double* xy, const int* starts, int rings, in
         free(out);
     }
     if (!path) return;
-    uint32_t col = paper(rgb);
+    uint32_t col = paper_fill(rgb);
     FPDFPath_SetDrawMode(path, FPDF_FILLMODE_ALTERNATE, 0);
     FPDFPageObj_SetFillColor(path, col >> 16 & 255, col >> 8 & 255, col & 255, 255);
-    FPDFPage_InsertObject(c->page, path);
+    // fills go under all lines and text, as hatches are usually sent to the back in CAD
+    if (!FPDFPage_InsertObjectAtIndex(c->page, path, (size_t) c->fillAt)) FPDFPage_InsertObject(c->page, path);
+    c->fillAt++;
     c->drawn++;
 }
 
@@ -400,13 +430,24 @@ static void pts_emit(Ctx* c, Pts* p, const Mat* m, int closed, uint32_t rgb) {
     p->n = 0;
 }
 
-static int arc_steps(double sweep) {
-    int n = (int) ceil(fabs(sweep) / (2 * M_PI) * 96);
-    return n < 4 ? 4 : n > 400 ? 400 : n;
+// Page points per drawing unit for the entity being drawn (0 while only measuring extents):
+// curves get as many segments as their real size on the sheet needs.
+static __thread double arcScale;
+
+// Segments for an arc: the chord may stray at most 0.004 pt (invisible even at deep zoom)
+// from the true curve; a 5 mm hole on a 1:200 sheet needs 8, a large arc up to 400.
+static int arc_steps(double sweep, double r) {
+    double a = fabs(sweep);
+    if (arcScale <= 0) { int n = (int) ceil(a / (2 * M_PI) * 16); return n < 4 ? 4 : n; }
+    double rpt = fabs(r) * arcScale;
+    double theta = rpt > 1e-9 ? sqrt(8 * 0.004 / rpt) : 2;
+    if (theta > 0.8) theta = 0.8;                    // at least 8 segments for a full circle
+    int n = (int) ceil(a / theta);
+    return n < 2 ? 2 : n > 400 ? 400 : n;
 }
 
 static void pts_arc(Pts* p, double cx, double cy, double r, double a0, double sweep, int first) {
-    int n = arc_steps(sweep);
+    int n = arc_steps(sweep, r);
     for (int i = first ? 0 : 1; i <= n; i++) {
         double a = a0 + sweep * i / n;
         pts_add(p, cx + r * cos(a), cy + r * sin(a));
@@ -618,6 +659,11 @@ static void put_line(Ctx* c, const uint32_t* cp, int n, double x, double y,
     }
     double h = hh * c->unit * c->k;                    // height in page points
     if (h < 0.02 || h > 5000) return;
+    if (c->clip) {                                      // clearly outside the viewport: skip early
+        double X0 = c->margin + (x * c->unit - c->ox) * c->k, Y0 = c->margin + (y * c->unit - c->oy) * c->k;
+        double reach = h * (0.6 * n * wf + 1.5) + 1;
+        if (X0 + reach < c->cx0 || X0 - reach > c->cx1 || Y0 + reach < c->cy0 || Y0 - reach > c->cy1) return;
+    }
     // runs of characters that need the same font (Georgian vs everything else)
     enum { MAXRUN = 32 };
     FPDF_PAGEOBJECT obj[MAXRUN];
@@ -761,7 +807,7 @@ static void spline_pts(Ctx* c, int i0, int i1, Pts* out) {
     double* fx = NULL; double* fy = NULL; int nf = 0, capf = 0;
     for (int i = i0; i < i1; i++) {
         int code = c->p[i].code;
-        double v = atof(c->p[i].val);
+        double v = atof((c->buf + c->p[i].off));
         if (code == 40 && nk < 4096) knots[nk++] = v;
         else if (code == 10) {
             if (nc == capc) { capc = capc ? capc * 2 : 32; cx = realloc(cx, sizeof(double) * capc); cy = realloc(cy, sizeof(double) * capc); cw = realloc(cw, sizeof(double) * capc); }
@@ -829,12 +875,17 @@ static int resolve(Ctx* c, int i0, int i1, uint32_t parentRgb, int depth, uint32
     if (L && L->hidden) return 0;
     if (L && L->handle && c->frozenI1 > c->frozenI0) {       // frozen in this viewport
         for (int k = c->frozenI0; k < c->frozenI1; k++) {
-            if ((c->p[k].code == 331 || c->p[k].code == 341) && strcasecmp(c->p[k].val, L->handle) == 0) return 0;
+            if ((c->p[k].code == 331 || c->p[k].code == 341) && strcasecmp((c->buf + c->p[k].off), L->handle) == 0) return 0;
         }
     }
     const char* tc = fstr(c, i0, i1, 420);
-    if (tc) { *out = (uint32_t) atol(tc) & 0xFFFFFF; return 1; }
     int col = fint(c, i0, i1, 62, 256);
+    // "420 0" is exact black only next to index colour 18, AutoCAD's nearest index to
+    // black; next to any other index colour it is LibreDWG's placeholder for "no exact colour"
+    if (tc && (atol(tc) != 0 || col == 18 || !fstr(c, i0, i1, 62))) {
+        *out = ((uint32_t) atol(tc) & 0xFFFFFF) | TRUECOLOR;
+        return 1;
+    }
     if (col < 0) return 0;                                  // a negative colour means "off"
     if (col == 0) { *out = parentRgb; return 1; }
     if (col == 256) {
@@ -859,11 +910,11 @@ static void draw_hatch(Ctx* c, int i, int e, const Mat* m, uint32_t rgb) {
     if (k >= e) return;
     if (fint(c, i, k, 70, 0) != 1) return;          // pattern hatches are not drawn
     Mat mm = ocs(c, i, e, m);
-    int paths = atoi(c->p[k].val);
+    int paths = atoi((c->buf + c->p[k].off));
     k++;
     Pts pts = {0};
     int* starts = NULL; int rings = 0;
-#define NEXT(gc) (k < e && c->p[k].code == (gc) ? atof(c->p[k++].val) : 0)
+#define NEXT(gc) (k < e && c->p[k].code == (gc) ? atof((c->buf + c->p[k++].off)) : 0)
     for (int pth = 0; pth < paths && k < e; pth++) {
         while (k < e && c->p[k].code != 92) k++;
         if (k >= e) break;
@@ -896,7 +947,7 @@ static void draw_hatch(Ctx* c, int i, int e, const Mat* m, uint32_t rgb) {
                     double s0 = a0 * M_PI / 180, sw = (a1 - a0) * M_PI / 180;
                     while (sw <= 0) sw += 2 * M_PI;
                     if (!ccw) { s0 = -s0; sw = -sw; }           // clockwise: angles are mirrored
-                    int n = arc_steps(sw);
+                    int n = arc_steps(sw, r);
                     for (int q = 0; q <= n; q++) { double a = s0 + sw * q / n; pts_add(&pts, cx + r * cos(a), cy + r * sin(a)); }
                 } else if (type == 3) {
                     double cx = NEXT(10), cy = NEXT(20), mx = NEXT(11), my = NEXT(21), ratio = NEXT(40);
@@ -906,7 +957,7 @@ static void draw_hatch(Ctx* c, int i, int e, const Mat* m, uint32_t rgb) {
                     while (sw <= 0) sw += 2 * M_PI;
                     double nx = -my * ratio, ny = mx * ratio;
                     if (!ccw) { a0 = -a0; sw = -sw; }
-                    int n = arc_steps(sw);
+                    int n = arc_steps(sw, hypot(mx, my));
                     for (int q = 0; q <= n; q++) { double t = a0 + sw * q / n; pts_add(&pts, cx + mx * cos(t) + nx * sin(t), cy + my * cos(t) + ny * sin(t)); }
                 } else if (type == 4) {                    // spline edge: use its control points
                     while (k < e && c->p[k].code != 10 && c->p[k].code != 72 && c->p[k].code != 97) k++;
@@ -963,7 +1014,8 @@ static void add_viewport(Ctx* c, int i, int e) {
 // Draws the entity that starts at pair i; returns the index of the next entity.
 static int draw_entity(Ctx* c, int i, const Mat* m, uint32_t parentRgb, int depth) {
     int e = ent_end(c, i);
-    const char* type = c->p[i].val;
+    arcScale = c->pass == 1 ? sqrt(fabs(m->a * m->d - m->b * m->c)) * c->unit * c->k : 0;
+    const char* type = (c->buf + c->p[i].off);
     if (depth == 0 && is(type, "VIEWPORT")) {
         if (c->space == 1) add_viewport(c, i, e);
         return e;
@@ -971,8 +1023,8 @@ static int draw_entity(Ctx* c, int i, const Mat* m, uint32_t parentRgb, int dept
     if (depth == 0 && c->checkSpace && (fint(c, i, e, 67, 0) == 1) != (c->space == 1)) {   // the other space
         if (is(type, "POLYLINE")) {
             int j = e;
-            while (j < c->n && c->p[j].code == 0 && is(c->p[j].val, "VERTEX")) j = ent_end(c, j);
-            if (j < c->n && c->p[j].code == 0 && is(c->p[j].val, "SEQEND")) j = ent_end(c, j);
+            while (j < c->n && c->p[j].code == 0 && is((c->buf + c->p[j].off), "VERTEX")) j = ent_end(c, j);
+            if (j < c->n && c->p[j].code == 0 && is((c->buf + c->p[j].off), "SEQEND")) j = ent_end(c, j);
             return j;
         }
         return e;
@@ -1008,7 +1060,7 @@ static int draw_entity(Ctx* c, int i, const Mat* m, uint32_t parentRgb, int dept
         if (fnum(c, i, e, 230, 1) < 0) { nx = -nx; ny = -ny; }
         double t0 = fnum(c, i, e, 41, 0), t1 = fnum(c, i, e, 42, 2 * M_PI), sw = t1 - t0;
         while (sw <= 0) sw += 2 * M_PI;
-        int n = arc_steps(sw);
+        int n = arc_steps(sw, hypot(mx, my));
         for (int k = 0; k <= n; k++) {
             double t = t0 + sw * k / n;
             pts_add(&pts, cx + mx * cos(t) + nx * sin(t), cy + my * cos(t) + ny * sin(t));
@@ -1024,9 +1076,9 @@ static int draw_entity(Ctx* c, int i, const Mat* m, uint32_t parentRgb, int dept
             int code = c->p[k].code;
             if (code == 10) {
                 if (nv == cap) { cap = cap ? cap * 2 : 16; vx = realloc(vx, sizeof(double) * cap); vy = realloc(vy, sizeof(double) * cap); vb = realloc(vb, sizeof(double) * cap); }
-                vx[nv] = atof(c->p[k].val); vy[nv] = 0; vb[nv] = 0; nv++;
-            } else if (code == 20 && nv) vy[nv - 1] = atof(c->p[k].val);
-            else if (code == 42 && nv) vb[nv - 1] = atof(c->p[k].val);
+                vx[nv] = atof((c->buf + c->p[k].off)); vy[nv] = 0; vb[nv] = 0; nv++;
+            } else if (code == 20 && nv) vy[nv - 1] = atof((c->buf + c->p[k].off));
+            else if (code == 42 && nv) vb[nv - 1] = atof((c->buf + c->p[k].off));
         }
         if (nv >= 2) {
             pts_add(&pts, vx[0], vy[0]);
@@ -1042,7 +1094,7 @@ static int draw_entity(Ctx* c, int i, const Mat* m, uint32_t parentRgb, int dept
         Mat mm = is3d ? *m : ocs(c, i, e, m);
         double px = 0, py = 0, pb = 0, fx = 0, fy = 0; int nv = 0;
         int j = e;
-        while (j < c->n && c->p[j].code == 0 && is(c->p[j].val, "VERTEX")) {
+        while (j < c->n && c->p[j].code == 0 && is((c->buf + c->p[j].off), "VERTEX")) {
             int je = ent_end(c, j);
             int vf = fint(c, j, je, 70, 0);
             if (ok && !(flags & (16 | 64)) && !(vf & 16)) {
@@ -1057,7 +1109,7 @@ static int draw_entity(Ctx* c, int i, const Mat* m, uint32_t parentRgb, int dept
             if (flags & 1) pts_bulge(&pts, px, py, fx, fy, pb);
             pts_emit(c, &pts, &mm, 0, rgb);
         }
-        if (j < c->n && c->p[j].code == 0 && is(c->p[j].val, "SEQEND")) j = ent_end(c, j);
+        if (j < c->n && c->p[j].code == 0 && is((c->buf + c->p[j].off), "SEQEND")) j = ent_end(c, j);
         free(pts.xy);
         return j;
     } else if (is(type, "SPLINE")) {
@@ -1077,8 +1129,8 @@ static int draw_entity(Ctx* c, int i, const Mat* m, uint32_t parentRgb, int dept
         if (!resolve(c, i, e, parentRgb, depth, &rgb)) return e;
         double x = 0;
         for (int k = i; k < e; k++) {
-            if (c->p[k].code == 10) x = atof(c->p[k].val);
-            else if (c->p[k].code == 20) pts_add(&pts, x, atof(c->p[k].val));
+            if (c->p[k].code == 10) x = atof((c->buf + c->p[k].off));
+            else if (c->p[k].code == 20) pts_add(&pts, x, atof((c->buf + c->p[k].off)));
         }
         pts_emit(c, &pts, m, 0, rgb);
     } else if (is(type, "TEXT") || is(type, "ATTRIB")) {
@@ -1098,11 +1150,11 @@ static int draw_entity(Ctx* c, int i, const Mat* m, uint32_t parentRgb, int dept
     } else if (is(type, "MTEXT")) {
         if (!resolve(c, i, e, parentRgb, depth, &rgb)) return e;
         size_t len = 0;
-        for (int k = i; k < e; k++) if (c->p[k].code == 3 || c->p[k].code == 1) len += strlen(c->p[k].val);
+        for (int k = i; k < e; k++) if (c->p[k].code == 3 || c->p[k].code == 1) len += strlen((c->buf + c->p[k].off));
         char* txt = malloc(len + 1);
         txt[0] = 0;
-        for (int k = i; k < e; k++) if (c->p[k].code == 3) strcat(txt, c->p[k].val);
-        for (int k = i; k < e; k++) if (c->p[k].code == 1) strcat(txt, c->p[k].val);
+        for (int k = i; k < e; k++) if (c->p[k].code == 3) strcat(txt, (c->buf + c->p[k].off));
+        for (int k = i; k < e; k++) if (c->p[k].code == 1) strcat(txt, (c->buf + c->p[k].off));
         double rot = fnum(c, i, e, 50, 0) * M_PI / 180;
         if (fstr(c, i, e, 11)) rot = atan2(fnum(c, i, e, 21, 0), fnum(c, i, e, 11, 1));
         int a = fint(c, i, e, 71, 1);
@@ -1147,9 +1199,35 @@ static int draw_entity(Ctx* c, int i, const Mat* m, uint32_t parentRgb, int dept
 
 static void draw_range(Ctx* c, int from, int to, const Mat* m, uint32_t parentRgb, int depth) {
     int i = from;
+    if (depth == 0) c->ordinal = 0;
     while (i < to) {
         if (c->p[i].code != 0) { i++; continue; }
-        int next = draw_entity(c, i, m, parentRgb, depth);
+        int next;
+        if (depth == 0 && c->recordBoxes) {
+            c->tx0 = c->ty0 = 1e300;
+            c->tx1 = c->ty1 = -1e300;
+            next = draw_entity(c, i, m, parentRgb, depth);
+            if (c->nebox == c->capebox) {
+                c->capebox = c->capebox ? c->capebox * 2 : 4096;
+                c->ebox = realloc(c->ebox, sizeof(float) * 4 * c->capebox);
+            }
+            float* b = c->ebox + 4 * c->nebox++;
+            b[0] = (float) c->tx0; b[1] = (float) c->ty0; b[2] = (float) c->tx1; b[3] = (float) c->ty1;
+        } else if (depth == 0 && c->cull && c->ordinal < c->nebox) {
+            const float* b = c->ebox + 4 * c->ordinal;
+            if (b[2] < b[0] || b[2] < c->wx0 || b[0] > c->wx1 || b[3] < c->wy0 || b[1] > c->wy1) {
+                next = ent_end(c, i);                            // not visible here: skip it
+                if (is((c->buf + c->p[i].off), "POLYLINE")) {
+                    while (next < c->n && c->p[next].code == 0 && is((c->buf + c->p[next].off), "VERTEX")) next = ent_end(c, next);
+                    if (next < c->n && c->p[next].code == 0 && is((c->buf + c->p[next].off), "SEQEND")) next = ent_end(c, next);
+                }
+            } else {
+                next = draw_entity(c, i, m, parentRgb, depth);
+            }
+        } else {
+            next = draw_entity(c, i, m, parentRgb, depth);
+        }
+        if (depth == 0) c->ordinal++;
         i = next > i ? next : i + 1;
     }
 }
@@ -1157,7 +1235,9 @@ static void draw_range(Ctx* c, int from, int to, const Mat* m, uint32_t parentRg
 // ---------------------------------------------------------------- reading
 
 static int tokenize(Ctx* c, char* buf, size_t len) {
-    int cap = (int) (len / 8) + 64;
+    c->buf = buf;
+    if (len >= 0xFFFFFFF0u) return 0;          // offsets are 32-bit
+    int cap = (int) (len / 16) + 64;
     c->p = malloc(sizeof(Pair) * cap);
     if (!c->p) return 0;
     c->n = 0;
@@ -1183,9 +1263,9 @@ static int tokenize(Ctx* c, char* buf, size_t len) {
             c->p = np;
         }
         c->p[c->n].code = atoi(t);
-        c->p[c->n].val = l2;
         // most values are compared or parsed; trim all but text strings (1, 3)
-        if (c->p[c->n].code != 1 && c->p[c->n].code != 3) c->p[c->n].val = trim(l2);
+        char* v = c->p[c->n].code != 1 && c->p[c->n].code != 3 ? trim(l2) : l2;
+        c->p[c->n].off = (uint32_t) (v - buf);
         c->n++;
     }
     return c->n > 0;
@@ -1213,23 +1293,23 @@ static void read_structure(Ctx* c) {
     c->entStart = c->entEnd = -1;
     for (int i = 0; i < c->n; i++) {
         Pair* p = &c->p[i];
-        if (p->code == 0 && is(p->val, "SECTION") && i + 1 < c->n && c->p[i + 1].code == 2) {
-            const char* name = c->p[i + 1].val;
+        if (p->code == 0 && is((c->buf + p->off), "SECTION") && i + 1 < c->n && c->p[i + 1].code == 2) {
+            const char* name = (c->buf + c->p[i + 1].off);
             section = is(name, "HEADER") ? 1 : is(name, "TABLES") ? 2 : is(name, "BLOCKS") ? 3 : is(name, "ENTITIES") ? 4 : is(name, "OBJECTS") ? 5 : 6;
             if (section == 4) c->entStart = i + 2;
             continue;
         }
-        if (p->code == 0 && is(p->val, "ENDSEC")) {
+        if (p->code == 0 && is((c->buf + p->off), "ENDSEC")) {
             if (section == 4) c->entEnd = i;
             section = 0;
             continue;
         }
         if (section == 1 && p->code == 9) {
-            const char* v = p->val;
-            if (is(v, "$INSUNITS") && i + 1 < c->n) c->unit = units_to_mm(atoi(c->p[i + 1].val));
-            else if (is(v, "$ACADVER") && i + 1 < c->n) c->utf8 = strcmp(c->p[i + 1].val, "AC1021") >= 0;
-            else if (is(v, "$DWGCODEPAGE") && i + 1 < c->n) c->cp1251 = strstr(c->p[i + 1].val, "1251") != NULL;
-        } else if (section == 2 && p->code == 0 && is(p->val, "LAYER")) {
+            const char* v = (c->buf + p->off);
+            if (is(v, "$INSUNITS") && i + 1 < c->n) c->unit = units_to_mm(atoi((c->buf + c->p[i + 1].off)));
+            else if (is(v, "$ACADVER") && i + 1 < c->n) c->utf8 = strcmp((c->buf + c->p[i + 1].off), "AC1021") >= 0;
+            else if (is(v, "$DWGCODEPAGE") && i + 1 < c->n) c->cp1251 = strstr((c->buf + c->p[i + 1].off), "1251") != NULL;
+        } else if (section == 2 && p->code == 0 && is((c->buf + p->off), "LAYER")) {
             int e = ent_end(c, i);
             const char* name = fstr(c, i, e, 2);
             if (!name) continue;
@@ -1239,9 +1319,9 @@ static void read_structure(Ctx* c) {
             L->handle = (char*) fstr(c, i, e, 5);
             int col = fint(c, i, e, 62, 7);
             const char* tc = fstr(c, i, e, 420);
-            L->rgb = tc ? (uint32_t) atol(tc) & 0xFFFFFF : aci(col);
+            L->rgb = tc && atol(tc) != 0 ? ((uint32_t) atol(tc) & 0xFFFFFF) | TRUECOLOR : aci(col);
             L->hidden = col < 0 || (fint(c, i, e, 70, 0) & 1);   // off, or frozen
-        } else if (section == 2 && p->code == 0 && is(p->val, "BLOCK_RECORD")) {
+        } else if (section == 2 && p->code == 0 && is((c->buf + p->off), "BLOCK_RECORD")) {
             int e = ent_end(c, i);
             const char* h = fstr(c, i, e, 5);
             const char* name = fstr(c, i, e, 2);
@@ -1251,15 +1331,15 @@ static void read_structure(Ctx* c) {
                 c->recs[c->nRecs].name = (char*) name;
                 c->nRecs++;
             }
-        } else if (section == 5 && p->code == 0 && is(p->val, "LAYOUT")) {
+        } else if (section == 5 && p->code == 0 && is((c->buf + p->off), "LAYOUT")) {
             int e = ent_end(c, i);
             const char* name = NULL;
             const char* rec = NULL;
             int inLayout = 0;
             for (int k = i; k < e; k++) {                  // name and 330 after "100 AcDbLayout"
-                if (c->p[k].code == 100) inLayout = is(c->p[k].val, "AcDbLayout");
-                else if (inLayout && c->p[k].code == 330) rec = c->p[k].val;
-                else if (inLayout && c->p[k].code == 1 && !name) name = c->p[k].val;
+                if (c->p[k].code == 100) inLayout = is((c->buf + c->p[k].off), "AcDbLayout");
+                else if (inLayout && c->p[k].code == 330) rec = (c->buf + c->p[k].off);
+                else if (inLayout && c->p[k].code == 1 && !name) name = (c->buf + c->p[k].off);
             }
             if (name && rec) {
                 if (c->nLayouts == capO) { capO = capO ? capO * 2 : 8; c->layouts = realloc(c->layouts, sizeof(Layout) * capO); }
@@ -1268,11 +1348,11 @@ static void read_structure(Ctx* c) {
                 c->layouts[c->nLayouts].block = (char*) rec;
                 c->nLayouts++;
             }
-        } else if (section == 3 && p->code == 0 && is(p->val, "BLOCK")) {
+        } else if (section == 3 && p->code == 0 && is((c->buf + p->off), "BLOCK")) {
             int e = ent_end(c, i);
             const char* name = fstr(c, i, e, 2);
             int j = e;
-            while (j < c->n && !(c->p[j].code == 0 && is(c->p[j].val, "ENDBLK"))) j++;
+            while (j < c->n && !(c->p[j].code == 0 && is((c->buf + c->p[j].off), "ENDBLK"))) j++;
             if (name) {
                 if (c->nBlocks == capB) { capB = capB ? capB * 2 : 64; c->blocks = realloc(c->blocks, sizeof(Block) * capB); }
                 Block* b = &c->blocks[c->nBlocks++];
@@ -1307,8 +1387,9 @@ static void robust_extents(Ctx* c, double* x0, double* y0, double* x1, double* y
     double ax = c->sx[lo], bx = c->sx[hi], ay = c->sy[lo], by = c->sy[hi];
     double sx = bx - ax, sy = by - ay, s = sx > sy ? sx : sy;
     if (s <= 0) return;
-    // keep everything within 30 % of the main body, then fit tightly around what is kept
-    double wx0 = ax - s * 0.3, wx1 = bx + s * 0.3, wy0 = ay - s * 0.3, wy1 = by + s * 0.3;
+    // keep everything within twice the main body's size (legends, title blocks and other
+    // drawings beside it stay; only objects far away are dropped), then fit around it
+    double wx0 = ax - s * 2, wx1 = bx + s * 2, wy0 = ay - s * 2, wy1 = by + s * 2;
     if (*x0 >= wx0 && *x1 <= wx1 && *y0 >= wy0 && *y1 <= wy1) return;   // nothing stray
     double kx0 = 1e300, kx1 = -1e300, ky0 = 1e300, ky1 = -1e300;
     for (int i = 0; i < c->ns; i++) {
@@ -1347,12 +1428,29 @@ static int new_page(Ctx* c, int index, double pw, double ph) {
         c->page = NULL;
     }
     c->ncp = 0;
+    c->fillAt = 0;
     if (pw < 72) pw = 72;
     if (ph < 72) ph = 72;
     c->pw = pw;
     c->ph = ph;
     c->page = FPDFPage_New(c->doc, index, pw, ph);
     return c->page != NULL;
+}
+
+// A DXF name (with \\U+XXXX escapes or code-page bytes) as UTF-8.
+static void utf8_name(Ctx* c, const char* in, char* out, size_t cap) {
+    Str s = {0};
+    decode(c, in, 0, &s);
+    size_t k = 0;
+    for (int i = 0; i < s.n && k + 4 < cap; i++) {
+        uint32_t ch = s.cp[i];
+        if (ch < 0x80) out[k++] = (char) ch;
+        else if (ch < 0x800) { out[k++] = (char) (0xC0 | ch >> 6); out[k++] = (char) (0x80 | (ch & 63)); }
+        else if (ch < 0x10000) { out[k++] = (char) (0xE0 | ch >> 12); out[k++] = (char) (0x80 | (ch >> 6 & 63)); out[k++] = (char) (0x80 | (ch & 63)); }
+        else { out[k++] = (char) (0xF0 | ch >> 18); out[k++] = (char) (0x80 | (ch >> 12 & 63)); out[k++] = (char) (0x80 | (ch >> 6 & 63)); out[k++] = (char) (0x80 | (ch & 63)); }
+    }
+    out[k] = 0;
+    free(s.cp);
 }
 
 static int cmp_layout(const void* a, const void* b) { return ((const Layout*) a)->tab - ((const Layout*) b)->tab; }
@@ -1401,8 +1499,16 @@ static int draw_layout(Ctx* c, const Layout* L, int index, DxfPages* out) {
         c->cy0 = c->margin + ((v.cy - v.h / 2) * c->unit - c->oy) * c->k;
         c->cy1 = c->margin + ((v.cy + v.h / 2) * c->unit - c->oy) * c->k;
         c->frozenI0 = v.i0; c->frozenI1 = v.i1;
-        c->space = 0; c->checkSpace = 1;
+        // the model area this viewport shows (mm), to skip everything outside it
+        {
+            double cs = cos(-v.twist), sn = sin(-v.twist), hw = v.w / 2 / s, hh = v.h / 2 / s;
+            double ext = fabs(cs) * hw + fabs(sn) * hh, eyt = fabs(sn) * hw + fabs(cs) * hh;
+            c->wx0 = (v.vx - ext) * c->unit; c->wx1 = (v.vx + ext) * c->unit;
+            c->wy0 = (v.vy - eyt) * c->unit; c->wy1 = (v.vy + eyt) * c->unit;
+        }
+        c->space = 0; c->checkSpace = 1; c->cull = 1;
         draw_range(c, c->entStart, c->entEnd, &m, 0xFFFFFF, 0);
+        c->cull = 0;
         c->space = 1; c->checkSpace = check;
         c->clip = 0;
         c->frozenI0 = c->frozenI1 = 0;
@@ -1410,7 +1516,7 @@ static int draw_layout(Ctx* c, const Layout* L, int index, DxfPages* out) {
         if (v.w * v.h > bestArea) { bestArea = v.w * v.h; ratio = 1 / s; }
     }
     out->ratio[out->pages] = ratio;
-    snprintf(out->name[out->pages], sizeof out->name[0], "%s", L->name);
+    utf8_name(c, L->name, out->name[out->pages], sizeof out->name[0]);
     out->pages++;
     return 1;
 }
@@ -1446,10 +1552,14 @@ int dxf_to_pdf_pages(const char* dxfPath, const char* pdfPath, const char* fontP
     // ---- the model, scaled to fit an A0 sheet
     c->space = 0; c->checkSpace = 1; c->pass = 0;
     reset_extents(c);
+    c->recordBoxes = 1;
     draw_range(c, c->entStart, c->entEnd, &IDENT, 0xFFFFFF, 0);
+    c->recordBoxes = 0;
     if (c->maxx >= c->minx) {
         double x0, y0, x1, y1;
         robust_extents(c, &x0, &y0, &x1, &y1);
+        double pad = ((x1 - x0) > (y1 - y0) ? (x1 - x0) : (y1 - y0)) * 0.015;   // text reaches a bit further
+        x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
         double w = x1 - x0, h = y1 - y0, span = w > h ? w : h;
         if (span <= 0) span = w = h = 1;
         static const double SCALES[] = {1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000,
@@ -1517,6 +1627,7 @@ done:
     free(c->recs);
     free(c->layouts);
     free(c->vps);
+    free(c->ebox);
     free(c->p);
     free(c);
     free(buf);

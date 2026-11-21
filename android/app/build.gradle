@@ -10,8 +10,8 @@ android {
         applicationId 'ge.planview'
         minSdk 24
         targetSdk 34
-        versionCode 18
-        versionName '1.14'
+        versionCode 19
+        versionName '1.15'
     }
     // Signing details live in keystore.properties (not published), next to settings.gradle.
     def ks = new Properties()

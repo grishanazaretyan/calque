@@ -37,6 +37,8 @@ final class PdfCore {
         void onSnap(int page, SnapIndex index);
         /** A DXF or DWG was converted: the PDF shown, each page's drawing scale and name. */
         void onDxf(File pdf, double[] ratios, String[] names);
+        /** Progress text while a drawing is being converted (null when done). */
+        void onStatus(String text);
     }
 
     /** What the view currently wants; a newer request replaces an older one. */
@@ -209,6 +211,7 @@ final class PdfCore {
             for (int i = 20; i < old.length; i++) old[i].delete();
         }
         post(() -> listener.onRendering(true));
+        post(() -> listener.onStatus(dwg ? "Converting DWG… large drawings take a minute" : "Converting DXF…"));
         File src = new File(dir, dwg ? "source.dwg" : "source.dxf");
         try (InputStream in = openStream(uri); OutputStream out = new FileOutputStream(src)) {
             byte[] buf = new byte[1 << 16];
@@ -222,6 +225,7 @@ final class PdfCore {
                 : Pdfium.dxfToPdf(src.getAbsolutePath(), tmp.getAbsolutePath(), font(false), font(true));
         src.delete();
         post(() -> listener.onRendering(false));
+        post(() -> listener.onStatus(null));
         int pages = info == null ? -1 : Integer.parseInt(info.split("\n", 2)[0].trim());
         if (pages <= 0) {
             tmp.delete();

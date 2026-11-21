@@ -26,3 +26,6 @@
 ## Android 1.14
 - DWG/DXF layouts as pages (viewports, scales, frozen layers), layout names as sheet titles
 - New icon
+
+## Android 1.15
+- DWG colours, hatch order, speed, extents and layout-name fixes
