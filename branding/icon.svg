@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- the folded flap: the cut-off corner mirrored across the crease x + y = 916 -->
+    <path id="flap" d="M518 398 L518 470 A48 48 0 0 1 470 518 L398 518 Z"/>
+    <clipPath id="sheet"><path d="M518 398 H674 A48 48 0 0 1 722 446 V674 A48 48 0 0 1 674 722 H446 A48 48 0 0 1 398 674 V518 Z"/></clipPath>
+    <linearGradient id="crease" x1="458" y1="458" x2="494" y2="494" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="9"/></filter>
+  </defs>
+  <rect width="1024" height="1024" fill="#1E2126"/>
+  <!-- back sheet -->
+  <rect x="303" y="303" width="324" height="324" rx="48" fill="#F2F3F5"/>
+  <!-- front sheet, translucent orange, top-left corner folded away -->
+  <path d="M518 398 H674 A48 48 0 0 1 722 446 V674 A48 48 0 0 1 674 722 H446 A48 48 0 0 1 398 674 V518 Z" fill="#FF6A13" fill-opacity="0.85"/>
+  <!-- shadow of the flap on the sheet -->
+  <g clip-path="url(#sheet)"><use href="#flap" transform="translate(7 7)" fill="#000" fill-opacity="0.28" filter="url(#soft)"/></g>
+  <!-- the flap: a second layer of the same translucent paper -->
+  <use href="#flap" fill="#FF6A13" fill-opacity="0.85"/>
+  <use href="#flap" fill="#FF6A13" fill-opacity="0.85"/>
+  <use href="#flap" fill="url(#crease)"/>
+  <!-- crease -->
+  <line x1="518" y1="398" x2="398" y2="518" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="2.5" stroke-linecap="round"/>
+</svg>
