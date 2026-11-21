@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      CHAT: ${{ secrets.TELEGRAM_CHAT }}
+      CHAT: ${{ secrets.TELEGRAM_CHAT || '-1004409075826' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,7 +29,7 @@ jobs:
       - name: Check settings
         run: |
           if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then
-            echo "::error::Add the TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT secrets in Settings → Secrets and variables → Actions"
+            echo "::error::Add the TELEGRAM_BOT_TOKEN secret in Settings → Secrets and variables → Actions"
             exit 1
           fi
 
