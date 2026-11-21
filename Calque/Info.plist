@@ -26,6 +26,43 @@
 	<true/>
 	<key>UISupportsDocumentBrowser</key>
 	<false/>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>ge.calque.viewer.open</string>
+	</array>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.autodesk.dwg</string>
+			<key>UTTypeDescription</key>
+			<string>AutoCAD drawing</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>dwg</string></array>
+				<key>public.mime-type</key>
+				<array><string>image/vnd.dwg</string><string>application/acad</string></array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.autodesk.dxf</string>
+			<key>UTTypeDescription</key>
+			<string>DXF drawing</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>dxf</string></array>
+				<key>public.mime-type</key>
+				<array><string>image/vnd.dxf</string><string>application/dxf</string></array>
+			</dict>
+		</dict>
+	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -38,13 +75,15 @@
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>com.adobe.pdf</string>
+				<string>com.autodesk.dwg</string>
+				<string>com.autodesk.dxf</string>
 			</array>
 		</dict>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
-		<false/>
+		<true/>
 		<key>UISceneConfigurations</key>
 		<dict>
 			<key>UIWindowSceneSessionRoleApplication</key>

@@ -29,7 +29,7 @@ jobs:
             (cd b-$SDK && cmake ../src -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=$SDK -DCMAKE_OSX_ARCHITECTURES=arm64 \
               -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 -DLIBREDWG_LIBONLY=On -DBUILD_SHARED_LIBS=Off -DDISABLE_WERROR=On \
               -DLIBREDWG_DISABLE_JSON=On -DENABLE_LTO=Off -DCMAKE_BUILD_TYPE=MinSizeRel \
-              "-DCMAKE_C_FLAGS=\$ENDIAN" > cfg.log 2>&1 || (tail -40 cfg.log; exit 1))
+              "-DCMAKE_C_FLAGS=$ENDIAN" > cfg.log 2>&1 || (tail -40 cfg.log; exit 1))
             (cd b-$SDK && make -j4 redwg > build.log 2>&1 || (grep -m20 -E "error" build.log; exit 1))
             strip -S b-$SDK/libredwg.a
           done

@@ -8,11 +8,29 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
 
     let url: URL
     let key: String
+    /// The PDF on screen: the file itself, or the converted copy of a DXF / DWG.
+    var docURL: URL
+    var drawingNames: [String?] = []
+    /// Set while sending an export with markup instead of the drawing itself.
+    var exportSource: URL?
+    var exportName: String?
+
+    // text search (see Viewer+Search.swift)
+    let searchButton = Theme.iconButton("magnifyingglass", "Search text", size: 20)
+    let searchCard = Theme.bar(radius: 26)
+    let searchField = UITextField()
+    let searchCount = Theme.label("", 13, .regular, .secondaryLabel)
+    var hits: [PDFSelection] = []
+    var hitIndex = 0
+    var pendingQuery: String?
+    var found: [PDFSelection] = []
+    let busy = UIActivityIndicatorView(style: .medium)
     private(set) var doc: PDFDocument?
     let pdfView = PDFView()
     let overlay = OverlayView()
     private var accessing = false
     private var password: String?
+    var passwordForExport: String? { password }
     private var hair: HairRenderer?
     var docController: UIDocumentInteractionController?
 
@@ -75,6 +93,7 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
 
     init(url: URL) {
         self.url = url
+        self.docURL = url
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         self.key = url.lastPathComponent + "|" + String(size)
         super.init(nibName: nil, bundle: nil)
@@ -183,6 +202,33 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
     // MARK: opening
 
     private func open() {
+        let kind = DrawingConverter.kind(of: url)
+        if kind == .dxf || kind == .dwg {
+            subLabel.text = kind == .dwg ? "Converting DWG… large drawings take a minute" : "Converting DXF…"
+            busy.startAnimating()
+            let src = url
+            DispatchQueue.global(qos: .userInitiated).async {
+                let r = DrawingConverter.convert(src, dwg: kind == .dwg)
+                DispatchQueue.main.async {
+                    self.busy.stopAnimating()
+                    switch r {
+                    case .failure(let e):
+                        self.fail(e.localizedDescription)
+                    case .success(let c):
+                        self.docURL = c.pdf
+                        self.drawingNames = c.names
+                        // drawn to known scales: measuring is right without calibrating
+                        if !Store.hasRatio(self.key) {
+                            for (i, r) in c.ratios.enumerated().reversed() { Store.setRatio(self.key, i, r) }
+                        }
+                        guard let d = PDFDocument(url: c.pdf) else { self.fail("The converted drawing could not be opened."); return }
+                        d.delegate = self
+                        self.show(d)
+                    }
+                }
+            }
+            return
+        }
         guard let d = PDFDocument(url: url) else {
             fail("This file cannot be opened. It may be damaged or not a PDF.")
             return
@@ -334,6 +380,7 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
             }
         }
         if let root = d.outlineRoot { walk(root, 1) }
+        for i in 0..<min(t.count, drawingNames.count) where t[i] == nil { t[i] = drawingNames[i] }   // "Model", layouts
         titles = t
     }
 
@@ -388,7 +435,8 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
         menuButton.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] done in
             done(self?.viewMenuItems() ?? [])
         }])
-        let row = UIStackView(arrangedSubviews: [back, names, menuButton])
+        searchButton.addTarget(self, action: #selector(openSearch), for: .touchUpInside)
+        let row = UIStackView(arrangedSubviews: [back, names, busy, searchButton, menuButton])
         row.alignment = .center
         row.spacing = 6
         row.translatesAutoresizingMaskIntoConstraints = false
@@ -402,8 +450,18 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
             row.centerYAnchor.constraint(equalTo: topBar.contentView.centerYAnchor),
             back.widthAnchor.constraint(equalToConstant: 44),
             menuButton.widthAnchor.constraint(equalToConstant: 44),
+            searchButton.widthAnchor.constraint(equalToConstant: 44),
         ])
         fixWidth(topBar, 760)
+        buildSearch()
+    }
+
+    /// The same drawing in a second window, e.g. side by side with another sheet in Split View.
+    func openInNewWindow() {
+        guard let bm = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) else { return }
+        let a = NSUserActivity(activityType: SceneDelegate.openActivity)
+        a.userInfo = ["bookmark": bm]
+        UIApplication.shared.requestSceneSessionActivation(nil, userActivity: a, options: nil) { _ in }
     }
 
     private func viewMenuItems() -> [UIMenuElement] {
@@ -425,6 +483,11 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
             self?.setHairline(Store.hairline, refresh: true)
         })
         out.append(exportMenu())
+        if UIApplication.shared.supportsMultipleScenes {
+            out.append(UIAction(title: "Open in New Window", image: UIImage(systemName: "rectangle.split.2x1")) { [weak self] _ in
+                self?.openInNewWindow()
+            })
+        }
         out.append(UIAction(title: "Settings", image: UIImage(systemName: "slider.horizontal.3")) { [weak self] _ in
             self?.openSettings()
         })
@@ -524,7 +587,7 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
     /// Draws every line at hairline width through PDFium, like Hairline in ArchiCAD.
     func setHairline(_ on: Bool, refresh: Bool) {
         if on {
-            if hair == nil { hair = HairRenderer(url: url, password: password) }
+            if hair == nil { hair = HairRenderer(url: docURL, password: password) }
             if hair == nil {
                 Store.hairline = false
                 let a = UIAlertController(title: "Hairlines", message: "This file cannot be drawn with hairlines.", preferredStyle: .alert)

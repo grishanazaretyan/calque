@@ -22,7 +22,7 @@ final class HomeViewController: UITableViewController, UIDocumentPickerDelegate 
         tableView.contentInset.bottom = 100
 
         var c = UIButton.Configuration.filled()
-        c.title = "Open PDF"
+        c.title = "Open"
         c.image = UIImage(systemName: "plus")
         c.imagePadding = 10
         c.cornerStyle = .capsule
@@ -66,7 +66,13 @@ final class HomeViewController: UITableViewController, UIDocumentPickerDelegate 
     }
 
     @objc private func pick() {
-        let p = UIDocumentPickerViewController(forOpeningContentTypes: [.pdf], asCopy: false)
+        // PDF drawings, and CAD drawings (DXF, DWG), which Calque converts on opening
+        var types: [UTType] = [.pdf]
+        for ext in ["dwg", "dxf"] {
+            if let t = UTType(filenameExtension: ext) { types.append(t) }
+            if let t = UTType(filenameExtension: ext, conformingTo: .data) { types.append(t) }
+        }
+        let p = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: false)
         p.delegate = self
         p.allowsMultipleSelection = false
         present(p, animated: true)
@@ -94,7 +100,7 @@ final class HomeViewController: UITableViewController, UIDocumentPickerDelegate 
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         if recents.isEmpty {
             cell.textLabel?.text = "Nothing opened yet"
-            cell.detailTextLabel?.text = "Tap Open PDF, or open a PDF from Files and choose Calque."
+            cell.detailTextLabel?.text = "Tap Open, or open a PDF, DWG or DXF from Files and choose Calque."
             cell.textLabel?.textColor = .secondaryLabel
             cell.detailTextLabel?.textColor = .secondaryLabel
             cell.detailTextLabel?.numberOfLines = 2
@@ -112,6 +118,19 @@ final class HomeViewController: UITableViewController, UIDocumentPickerDelegate 
         cell.detailTextLabel?.textColor = .secondaryLabel
         cell.accessoryType = .disclosureIndicator
         return cell
+    }
+
+    override func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath,
+                            point: CGPoint) -> UIContextMenuConfiguration? {
+        guard !recents.isEmpty, UIApplication.shared.supportsMultipleScenes else { return nil }
+        let r = recents[indexPath.row]
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+            UIMenu(children: [UIAction(title: "Open in New Window", image: UIImage(systemName: "rectangle.split.2x1")) { _ in
+                let a = NSUserActivity(activityType: SceneDelegate.openActivity)
+                a.userInfo = ["bookmark": r.bookmark]
+                UIApplication.shared.requestSceneSessionActivation(nil, userActivity: a, options: nil) { _ in }
+            }])
+        }
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {

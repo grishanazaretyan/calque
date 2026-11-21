@@ -16,6 +16,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 }
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    /// "Open in New Window": carries a bookmark of the file to show in the new window.
+    static let openActivity = "ge.calque.viewer.open"
     var window: UIWindow?
     private var home: HomeViewController?
 
@@ -31,6 +33,13 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window = w
         home = h
         if let u = options.urlContexts.first?.url { DispatchQueue.main.async { h.open(u) } }
+        if let a = options.userActivities.first(where: { $0.activityType == Self.openActivity }),
+           let bm = a.userInfo?["bookmark"] as? Data {
+            var stale = false
+            if let u = try? URL(resolvingBookmarkData: bm, options: [], relativeTo: nil, bookmarkDataIsStale: &stale) {
+                DispatchQueue.main.async { h.open(u) }
+            }
+        }
     }
 
     /// A PDF opened from Files or another app ("Open in Calque").

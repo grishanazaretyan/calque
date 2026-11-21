@@ -41,6 +41,8 @@ enum Store {
         return doc > 0 ? doc : 100
     }
 
+    static func hasRatio(_ key: String) -> Bool { d.object(forKey: "scale:" + key) != nil }
+
     static func setRatio(_ key: String, _ page: Int, _ ratio: Double) {
         d.set(ratio, forKey: "scale:\(key)#\(page)")
         d.set(ratio, forKey: "scale:" + key)

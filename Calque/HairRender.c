@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <pthread.h>
+#include "dwg2pdf.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -129,8 +130,7 @@ static Page *page(Doc *d, int index) {
     return free_slot;
 }
 
-void *hair_open(const char *path, const char *password) {
-    pthread_mutex_lock(&lock);
+static void ensure_init(void) {
     if (!initialised) {
         FPDF_LIBRARY_CONFIG cfg;
         memset(&cfg, 0, sizeof cfg);
@@ -138,6 +138,21 @@ void *hair_open(const char *path, const char *password) {
         FPDF_InitLibraryWithConfig(&cfg);
         initialised = 1;
     }
+}
+
+int calque_convert(const char *path, int dwg, const char *tmpDxf, const char *pdf,
+                   const char *font, const char *georgianFont, DxfPages *out) {
+    pthread_mutex_lock(&lock);
+    ensure_init();
+    int r = dwg ? dwg_to_pdf_pages(path, tmpDxf, pdf, font, georgianFont, out)
+                : dxf_to_pdf_pages(path, pdf, font, georgianFont, out);
+    pthread_mutex_unlock(&lock);
+    return r;
+}
+
+void *hair_open(const char *path, const char *password) {
+    pthread_mutex_lock(&lock);
+    ensure_init();
     Doc *d = NULL;
     FPDF_DOCUMENT doc = FPDF_LoadDocument(path, password);
     if (doc) {
