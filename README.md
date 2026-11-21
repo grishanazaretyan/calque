@@ -1,5 +1,7 @@
-# Calque for iPad
+# Calque
 
-Fast PDF viewer for large architectural drawings: sheet list, measuring with snap and calibration, markup with movable text.
+Fast viewer for architectural drawings with real-scale measuring, markup and hairlines.
 
-Every push builds an unsigned `Calque.ipa` (Actions → latest run → Artifacts). Install it with AltStore, which signs it with your Apple ID.
+- `android/` — Android app (PDF, DXF, DWG). GPL-3.0-or-later, see `android/LICENSE`.
+- `Calque/`, `Calque.xcodeproj` — iPad app (PDFKit + PDFium).
+- `releases/` — published builds; each new folder is posted to the Telegram channel.

@@ -18,3 +18,7 @@
 - DXF opening (to scale), DWG hint
 - Export with markup
 - Text search
+
+## Android 1.13
+- DWG opening via LibreDWG; Android app is now GPL-3.0 open source (android/)
+- Fix: stray diagonal line when zooming into DXF drawings
