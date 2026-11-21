@@ -3,3 +3,4 @@ build/
 Payload/
 xcuserdata/
 .DS_Store
+!releases/**/*.ipa

@@ -33,22 +33,21 @@ jobs:
             exit 1
           fi
 
-      - name: Find new releases
+      - name: Find new release files
         env:
           FOLDER: ${{ inputs.folder }}
           BEFORE: ${{ github.event.before }}
         run: |
           if [ -n "$FOLDER" ]; then
-            echo "$FOLDER" > folders.txt
+            ls -1 "$FOLDER"/* > added.txt
           else
-            git diff --name-only --diff-filter=A "$BEFORE" HEAD -- releases \
-              | grep '/notes.md$' | xargs -r -n1 dirname > folders.txt || true
+            git diff --name-only --diff-filter=A "$BEFORE" HEAD -- releases > added.txt || true
           fi
-          cat folders.txt
+          cat added.txt
 
       - name: Post to Telegram
         run: |
-          while read -r d; do
+          for d in $(xargs -r -n1 dirname < added.txt | sort -u); do
             [ -f "$d/notes.md" ] || continue
             case "$(basename "$d")" in
               android*) tag="#android" ;;
@@ -56,16 +55,19 @@ jobs:
               *) tag="" ;;
             esac
             title=$(head -n1 "$d/notes.md" | sed 's/^# *//')
-            { head -c 3900 "$d/notes.md" | sed '1s/^# *//; 1s/^/🆕 /'; echo; echo "$tag"; } > message.txt
-            curl -sS --fail-with-body "https://api.telegram.org/bot$TOKEN/sendMessage" \
-              --data-urlencode "chat_id=$CHAT" \
-              --data-urlencode "text@message.txt" > /dev/null
-            for f in "$d"/*; do
-              [ "$(basename "$f")" = notes.md ] && continue
+            # the changelog goes out once, when notes.md is first pushed
+            if grep -qx "$d/notes.md" added.txt; then
+              { head -c 3900 "$d/notes.md" | sed '1s/^# *//; 1s/^/🆕 /'; echo; echo "$tag"; } > message.txt
+              curl -sS --fail-with-body "https://api.telegram.org/bot$TOKEN/sendMessage" \
+                --data-urlencode "chat_id=$CHAT" \
+                --data-urlencode "text@message.txt" > /dev/null
+              echo "sent changelog for $d"
+            fi
+            grep "^$d/" added.txt | grep -v '/notes.md$' | while read -r f; do
               curl -sS --fail-with-body "https://api.telegram.org/bot$TOKEN/sendDocument" \
                 --form-string "chat_id=$CHAT" \
                 --form-string "caption=$title $tag" \
                 -F "document=@$f" > /dev/null
               echo "sent $f"
             done
-          done < folders.txt
+          done
