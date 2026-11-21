@@ -290,6 +290,9 @@ extension ViewerViewController {
             Store.setRatio(s.key, page >= 0 ? page : s.measurePage, r)
             s.updateMeasure()
             s.overlay.setNeedsDisplay()
+            let t = UIAlertController(title: nil, message: "Scale set to " + Units.scaleLabel(r), preferredStyle: .alert)
+            s.present(t, animated: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { t.dismiss(animated: true) }
         })
         presentAsking(a)
     }

@@ -14,6 +14,7 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
     private var accessing = false
     private var password: String?
     private var hair: HairRenderer?
+    var docController: UIDocumentInteractionController?
 
     var titles: [String?] = []
     var mode: Mode = .view
@@ -423,6 +424,7 @@ final class ViewerViewController: UIViewController, UIGestureRecognizerDelegate,
             Store.hairline.toggle()
             self?.setHairline(Store.hairline, refresh: true)
         })
+        out.append(exportMenu())
         out.append(UIAction(title: "Settings", image: UIImage(systemName: "slider.horizontal.3")) { [weak self] _ in
             self?.openSettings()
         })

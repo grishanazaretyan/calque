@@ -15,6 +15,7 @@
 		CEE215924E6A7C7519E2EC6F /* Snap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 416830F238E51BCDE5C7133F /* Snap.swift */; };
 		61D043D974340DF5ED0FE451 /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C3D2A14BDE4B16B0A2E123F /* Store.swift */; };
 		3CE9E92A18EC61DAA21A6072 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F0C612EF37DEF6456204642 /* Theme.swift */; };
+		5388DDD00DCB41DD0843E04F /* Viewer+Export.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD707327905CE7A52190CE44 /* Viewer+Export.swift */; };
 		821BD3B54548745C177C3B0F /* Viewer+Markup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E238D438AE5252AD1511580 /* Viewer+Markup.swift */; };
 		941DC9977F9966342F7A775C /* Viewer+Measure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1535D81CD834F4906BF57DDC /* Viewer+Measure.swift */; };
 		D3C278AD06674DE8BAE4B9C7 /* ViewerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41BF5C0E1D5F6608658FA2D4 /* ViewerViewController.swift */; };
@@ -49,6 +50,7 @@
 		416830F238E51BCDE5C7133F /* Snap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Snap.swift"; sourceTree = "<group>"; };
 		0C3D2A14BDE4B16B0A2E123F /* Store.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Store.swift"; sourceTree = "<group>"; };
 		1F0C612EF37DEF6456204642 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Theme.swift"; sourceTree = "<group>"; };
+		DD707327905CE7A52190CE44 /* Viewer+Export.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Viewer+Export.swift"; sourceTree = "<group>"; };
 		1E238D438AE5252AD1511580 /* Viewer+Markup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Viewer+Markup.swift"; sourceTree = "<group>"; };
 		1535D81CD834F4906BF57DDC /* Viewer+Measure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Viewer+Measure.swift"; sourceTree = "<group>"; };
 		41BF5C0E1D5F6608658FA2D4 /* ViewerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ViewerViewController.swift"; sourceTree = "<group>"; };
@@ -92,6 +94,7 @@
 				416830F238E51BCDE5C7133F /* Snap.swift */,
 				0C3D2A14BDE4B16B0A2E123F /* Store.swift */,
 				1F0C612EF37DEF6456204642 /* Theme.swift */,
+				DD707327905CE7A52190CE44 /* Viewer+Export.swift */,
 				1E238D438AE5252AD1511580 /* Viewer+Markup.swift */,
 				1535D81CD834F4906BF57DDC /* Viewer+Measure.swift */,
 				41BF5C0E1D5F6608658FA2D4 /* ViewerViewController.swift */,
@@ -193,6 +196,7 @@
 				CEE215924E6A7C7519E2EC6F /* Snap.swift in Sources */,
 				61D043D974340DF5ED0FE451 /* Store.swift in Sources */,
 				3CE9E92A18EC61DAA21A6072 /* Theme.swift in Sources */,
+				5388DDD00DCB41DD0843E04F /* Viewer+Export.swift in Sources */,
 				821BD3B54548745C177C3B0F /* Viewer+Markup.swift in Sources */,
 				941DC9977F9966342F7A775C /* Viewer+Measure.swift in Sources */,
 				D3C278AD06674DE8BAE4B9C7 /* ViewerViewController.swift in Sources */,
