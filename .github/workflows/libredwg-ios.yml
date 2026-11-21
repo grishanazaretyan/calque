@@ -1,0 +1,41 @@
+name: Build LibreDWG for iOS
+
+# Builds LibreDWG (GPL-3.0-or-later) as a static xcframework for the iPad app.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["tools/libredwg-ios.txt", ".github/workflows/libredwg-ios.yml"]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get LibreDWG
+        run: |
+          COMMIT=$(head -n1 tools/libredwg-ios.txt)
+          git clone -q https://github.com/LibreDWG/libredwg src
+          git -C src checkout -q "$COMMIT"
+          # 10 significant digits in the intermediate DXF instead of 16: smaller and faster
+          sed -i '' 's/#  define DXF_PRECISION 16/#  define DXF_PRECISION 10/' src/src/out_dxf.h
+      - name: Build
+        run: |
+          set -e
+          for SDK in iphoneos iphonesimulator; do
+            mkdir -p b-$SDK
+            (cd b-$SDK && cmake ../src -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=$SDK -DCMAKE_OSX_ARCHITECTURES=arm64 \
+              -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 -DLIBREDWG_LIBONLY=On -DBUILD_SHARED_LIBS=Off -DDISABLE_WERROR=On \
+              -DLIBREDWG_DISABLE_JSON=On -DENABLE_LTO=Off -DCMAKE_BUILD_TYPE=MinSizeRel > cfg.log 2>&1 || (tail -40 cfg.log; exit 1))
+            (cd b-$SDK && make -j4 redwg > build.log 2>&1 || (grep -m20 -E "error" build.log; exit 1))
+            strip -S b-$SDK/libredwg.a
+          done
+          mkdir -p hdr && cp src/include/dwg.h src/include/dwg_api.h hdr/
+          xcodebuild -create-xcframework -library b-iphoneos/libredwg.a -headers hdr \
+            -library b-iphonesimulator/libredwg.a -headers hdr -output libredwg.xcframework
+          ls -la b-*/libredwg.a
+          zip -qry libredwg-xcframework.zip libredwg.xcframework
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libredwg-xcframework
+          path: libredwg-xcframework.zip
