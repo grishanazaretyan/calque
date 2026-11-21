@@ -22,11 +22,14 @@ jobs:
       - name: Build
         run: |
           set -e
+          # Apple has the OSSwap… byte-order functions instead of le64toh and friends
+          ENDIAN="-include libkern/OSByteOrder.h -Dle64toh=OSSwapLittleToHostInt64 -Dbe64toh=OSSwapBigToHostInt64 -Dhtole64=OSSwapHostToLittleInt64 -Dhtobe64=OSSwapHostToBigInt64 -Dle32toh=OSSwapLittleToHostInt32 -Dbe32toh=OSSwapBigToHostInt32 -Dhtole32=OSSwapHostToLittleInt32 -Dhtobe32=OSSwapHostToBigInt32 -Dle16toh=OSSwapLittleToHostInt16 -Dbe16toh=OSSwapBigToHostInt16 -Dhtole16=OSSwapHostToLittleInt16 -Dhtobe16=OSSwapHostToBigInt16"
           for SDK in iphoneos iphonesimulator; do
             mkdir -p b-$SDK
             (cd b-$SDK && cmake ../src -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=$SDK -DCMAKE_OSX_ARCHITECTURES=arm64 \
               -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 -DLIBREDWG_LIBONLY=On -DBUILD_SHARED_LIBS=Off -DDISABLE_WERROR=On \
-              -DLIBREDWG_DISABLE_JSON=On -DENABLE_LTO=Off -DCMAKE_BUILD_TYPE=MinSizeRel > cfg.log 2>&1 || (tail -40 cfg.log; exit 1))
+              -DLIBREDWG_DISABLE_JSON=On -DENABLE_LTO=Off -DCMAKE_BUILD_TYPE=MinSizeRel \
+              "-DCMAKE_C_FLAGS=\$ENDIAN" > cfg.log 2>&1 || (tail -40 cfg.log; exit 1))
             (cd b-$SDK && make -j4 redwg > build.log 2>&1 || (grep -m20 -E "error" build.log; exit 1))
             strip -S b-$SDK/libredwg.a
           done
