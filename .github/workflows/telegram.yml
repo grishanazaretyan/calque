@@ -1,14 +1,15 @@
 name: Post release to Telegram
 
-# Every published GitHub release (Android .apk or iPad .ipa) goes to the Telegram channel:
-# first the changelog as a message, then each file attached to the release.
+# Each new folder under releases/ (for example releases/android-1.11/) holds the app file
+# (.apk or .ipa) and notes.md. Pushing it posts the changelog and the file to the channel.
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
+    paths: ["releases/**"]
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Release tag to post again (for example android-1.11)"
+      folder:
+        description: "Release folder to post again (for example releases/android-1.11)"
         required: true
 
 permissions:
@@ -20,9 +21,11 @@ jobs:
     env:
       TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       CHAT: ${{ secrets.TELEGRAM_CHAT }}
-      GH_TOKEN: ${{ github.token }}
-      TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Check settings
         run: |
           if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then
@@ -30,28 +33,34 @@ jobs:
             exit 1
           fi
 
-      - name: Download the release
+      - name: Find new releases
+        env:
+          FOLDER: ${{ inputs.folder }}
+          BEFORE: ${{ github.event.before }}
         run: |
-          mkdir files
-          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json name,body --jq '.name' > title.txt
-          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json name,body --jq '.body' > notes.txt
-          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -D files
-          ls -la files
+          if [ -n "$FOLDER" ]; then
+            echo "$FOLDER" > folders.txt
+          else
+            git diff --name-only --diff-filter=A "$BEFORE" HEAD -- releases \
+              | grep '/notes.md$' | xargs -r -n1 dirname > folders.txt || true
+          fi
+          cat folders.txt
 
-      - name: Send changelog
+      - name: Post to Telegram
         run: |
-          { echo "🆕 $(cat title.txt)"; echo; cat notes.txt; } | head -c 4000 > message.txt
-          curl -sS --fail-with-body "https://api.telegram.org/bot$TOKEN/sendMessage" \
-            --data-urlencode "chat_id=$CHAT" \
-            --data-urlencode "text@message.txt" \
-            --data-urlencode "disable_web_page_preview=true" > /dev/null
-
-      - name: Send files
-        run: |
-          for f in files/*; do
-            curl -sS --fail-with-body "https://api.telegram.org/bot$TOKEN/sendDocument" \
-              --form-string "chat_id=$CHAT" \
-              --form-string "caption=$(cat title.txt)" \
-              -F "document=@$f" > /dev/null
-            echo "sent $f"
-          done
+          while read -r d; do
+            [ -f "$d/notes.md" ] || continue
+            title=$(head -n1 "$d/notes.md" | sed 's/^# *//')
+            head -c 4000 "$d/notes.md" | sed '1s/^# *//; 1s/^/🆕 /' > message.txt
+            curl -sS --fail-with-body "https://api.telegram.org/bot$TOKEN/sendMessage" \
+              --data-urlencode "chat_id=$CHAT" \
+              --data-urlencode "text@message.txt" > /dev/null
+            for f in "$d"/*; do
+              [ "$(basename "$f")" = notes.md ] && continue
+              curl -sS --fail-with-body "https://api.telegram.org/bot$TOKEN/sendDocument" \
+                --form-string "chat_id=$CHAT" \
+                --form-string "caption=$title" \
+                -F "document=@$f" > /dev/null
+              echo "sent $f"
+            done
+          done < folders.txt
