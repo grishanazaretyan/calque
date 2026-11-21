@@ -8,13 +8,16 @@ def gid(s): return hashlib.md5(s.encode()).hexdigest()[:24].upper()
 swift = sorted(f for f in os.listdir(os.path.join(ROOT, "Calque")) if f.endswith(".swift"))
 cfiles = sorted(f for f in os.listdir(os.path.join(ROOT, "Calque")) if f.endswith(".c"))
 headers = sorted(f for f in os.listdir(os.path.join(ROOT, "Calque")) if f.endswith(".h"))
-resources = [("Assets.xcassets", "folder.assetcatalog"), ("licenses.txt", "text")]
+resources = [("Assets.xcassets", "folder.assetcatalog"), ("licenses.txt", "text"),
+             ("Fonts/NotoSans-Regular.ttf", "file"), ("Fonts/NotoSansGeorgian-Regular.ttf", "file")]
+DWG = "LibreDWG/libredwg.xcframework"
 XCF = "PDFium/pdfium.xcframework"
 
 P=gid("project"); T=gid("target"); G_MAIN=gid("main group"); G_APP=gid("app group"); G_PROD=gid("products")
 APP=gid("product app"); SRC=gid("sources phase"); RES=gid("resources phase"); FW=gid("frameworks phase")
 EMB=gid("embed phase"); INFO_F=gid("file info")
 XCF_F=gid("file xcf"); XCF_B=gid("build xcf"); XCF_E=gid("embed xcf")
+DWG_F=gid("file dwg xcf"); DWG_B=gid("build dwg xcf")
 CL_P=gid("cl project"); CL_T=gid("cl target")
 DBG_P=gid("debug p"); REL_P=gid("release p"); DBG_T=gid("debug t"); REL_T=gid("release t")
 
@@ -24,6 +27,7 @@ for f in swift + cfiles + headers:
     fileref += f'\t\t{gid("f"+f)} /* {f} */ = {{isa = PBXFileReference; lastKnownFileType = {ftype[os.path.splitext(f)[1]]}; path = "{f}"; sourceTree = "<group>"; }};\n'
 for f, t in resources:
     fileref += f'\t\t{gid("f"+f)} /* {f} */ = {{isa = PBXFileReference; lastKnownFileType = {t}; path = "{f}"; sourceTree = "<group>"; }};\n'
+fileref += f'\t\t{DWG_F} /* libredwg.xcframework */ = {{isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = "{DWG}"; sourceTree = "<group>"; }};\n'
 fileref += f'\t\t{XCF_F} /* pdfium.xcframework */ = {{isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = "{XCF}"; sourceTree = "<group>"; }};\n'
 
 build = ""
@@ -31,6 +35,7 @@ for f in swift + cfiles:
     build += f'\t\t{gid("b"+f)} /* {f} in Sources */ = {{isa = PBXBuildFile; fileRef = {gid("f"+f)} /* {f} */; }};\n'
 for f, _ in resources:
     build += f'\t\t{gid("b"+f)} /* {f} in Resources */ = {{isa = PBXBuildFile; fileRef = {gid("f"+f)} /* {f} */; }};\n'
+build += f'\t\t{DWG_B} /* libredwg.xcframework in Frameworks */ = {{isa = PBXBuildFile; fileRef = {DWG_F} /* libredwg.xcframework */; }};\n'
 build += f'\t\t{XCF_B} /* pdfium.xcframework in Frameworks */ = {{isa = PBXBuildFile; fileRef = {XCF_F} /* pdfium.xcframework */; }};\n'
 build += f'\t\t{XCF_E} /* pdfium.xcframework in Embed Frameworks */ = {{isa = PBXBuildFile; fileRef = {XCF_F} /* pdfium.xcframework */; settings = {{ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }}; }};\n'
 
@@ -42,16 +47,19 @@ common_t = '''				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = "@TEAM@";
-				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Calque/PDFium/include";
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/Calque/PDFium/include",
+					"$(PROJECT_DIR)/Calque/LibreDWG/include",
+				);
 				INFOPLIST_FILE = Calque/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = ge.calque.viewer;
 				PRODUCT_NAME = Calque;
 				SDKROOT = iphoneos;
@@ -107,6 +115,7 @@ pbx = f'''// !$*UTF8*$!
 			buildActionMask = 2147483647;
 			files = (
 				{XCF_B} /* pdfium.xcframework in Frameworks */,
+				{DWG_B} /* libredwg.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		}};
@@ -125,6 +134,7 @@ pbx = f'''// !$*UTF8*$!
 			isa = PBXGroup;
 			children = (
 {children}				{XCF_F} /* pdfium.xcframework */,
+				{DWG_F} /* libredwg.xcframework */,
 				{INFO_F} /* Info.plist */,
 			);
 			path = Calque;
