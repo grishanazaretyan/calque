@@ -59,6 +59,7 @@ common_t = '''				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = "-liconv";
 				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = ge.calque.viewer;
 				PRODUCT_NAME = Calque;
