@@ -13,3 +13,8 @@
 ## iPad 1.2
 - Open in another app, Share, Save to Files and Print from the ⋮ menu
 - Scale confirmation after calibration
+
+## Android 1.12
+- DXF opening (to scale), DWG hint
+- Export with markup
+- Text search
