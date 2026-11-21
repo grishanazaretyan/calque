@@ -29,3 +29,6 @@
 
 ## Android 1.15
 - DWG colours, hatch order, speed, extents and layout-name fixes
+
+## iPad 1.3
+- DWG/DXF with layouts, export with markup, text search, multiple windows (Split View), new icon; GPL-3.0
