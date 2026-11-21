@@ -5,7 +5,7 @@ name: Post release to Telegram
 on:
   push:
     branches: [main]
-    paths: ["releases/**"]
+    paths: ["releases/**", "branding/channel-photo.png"]
   workflow_dispatch:
     inputs:
       folder:
@@ -31,6 +31,18 @@ jobs:
           if [ -z "$TOKEN" ] || [ -z "$CHAT" ]; then
             echo "::error::Add the TELEGRAM_BOT_TOKEN secret in Settings → Secrets and variables → Actions"
             exit 1
+          fi
+
+      - name: Update channel photo
+        if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if git diff --name-only "$BEFORE" HEAD | grep -qx branding/channel-photo.png; then
+            curl -sS --fail-with-body "https://api.telegram.org/bot$TOKEN/setChatPhoto" \
+              --form-string "chat_id=$CHAT" \
+              -F "photo=@branding/channel-photo.png" > /dev/null
+            echo "channel photo updated"
           fi
 
       - name: Find new release files
