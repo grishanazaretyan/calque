@@ -2,6 +2,7 @@ name: Build IPA
 
 on:
   push:
+    paths-ignore: ["releases/**", "CHANGELOG.md"]
   workflow_dispatch:
 
 jobs:

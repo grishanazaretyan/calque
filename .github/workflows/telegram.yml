@@ -50,8 +50,13 @@ jobs:
         run: |
           while read -r d; do
             [ -f "$d/notes.md" ] || continue
+            case "$(basename "$d")" in
+              android*) tag="#android" ;;
+              ios*|ipad*) tag="#ios" ;;
+              *) tag="" ;;
+            esac
             title=$(head -n1 "$d/notes.md" | sed 's/^# *//')
-            head -c 4000 "$d/notes.md" | sed '1s/^# *//; 1s/^/🆕 /' > message.txt
+            { head -c 3900 "$d/notes.md" | sed '1s/^# *//; 1s/^/🆕 /'; echo; echo "$tag"; } > message.txt
             curl -sS --fail-with-body "https://api.telegram.org/bot$TOKEN/sendMessage" \
               --data-urlencode "chat_id=$CHAT" \
               --data-urlencode "text@message.txt" > /dev/null
@@ -59,7 +64,7 @@ jobs:
               [ "$(basename "$f")" = notes.md ] && continue
               curl -sS --fail-with-body "https://api.telegram.org/bot$TOKEN/sendDocument" \
                 --form-string "chat_id=$CHAT" \
-                --form-string "caption=$title" \
+                --form-string "caption=$title $tag" \
                 -F "document=@$f" > /dev/null
               echo "sent $f"
             done
